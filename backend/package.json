@@ -1,0 +1,15 @@
+{
+  "name": "vas-backend",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+  "dev": "node --watch src/server.js",
+  "seed:tasks": "node src/db/seeds/seed-tasks.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "pg": "^8.11.5",
+    "dotenv": "^16.4.5",
+    "cors": "^2.8.5"
+  }
+}
