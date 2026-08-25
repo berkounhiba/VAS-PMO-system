@@ -3,7 +3,9 @@ import { getTasksByAssignee, updateTaskStatus, getAllTasksFull } from "../contro
 
 const router = Router();
 router.get("/tasks", getTasksByAssignee);
-router.put("/tasks/:id", updateTaskStatus);
+router.put("/tasks/:id/status", updateTaskStatus);
 router.get("/tasks/full", getAllTasksFull);
+
+
 
 export default router;

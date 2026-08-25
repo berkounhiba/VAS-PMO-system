@@ -19,6 +19,8 @@ export async function updateTaskStatus(req, res) {
   res.json(result.rows[0]);
 }
 
+
+
 export async function getAllTasksFull(req, res) {
   const result = await pool.query(`
     SELECT
