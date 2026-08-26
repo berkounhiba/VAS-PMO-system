@@ -76,16 +76,16 @@ export function normalizeMilestone(m, { projectNameById, userNameById }) {
   };
 }
 
-export function normalizeRisk(r, { projectNameById, userNameById }) {
+export function normalizeRisk(r, { projectNameById, userNameById } = {}) {
   return {
     id: r.id,
-    project: projectNameById.get(r.project_id) ?? "Unknown project",
-    risk: r.description ?? "Untitled risk",
+    project: r.project ?? (projectNameById && projectNameById.get(r.project_id)) ?? "Unknown project",
+    risk: r.risk ?? r.description ?? "Untitled risk",
     probability: r.probability ?? "—",
     impact: r.impact ?? "—",
     score: r.score ?? 0,
     mitigation: r.mitigation ?? "—",
-    owner: userNameById.get(r.owner_id) ?? "Unassigned",
+    owner: r.owner ?? (userNameById && userNameById.get(r.owner_id)) ?? "Unassigned",
     status: r.status ?? "Open",
   };
 }

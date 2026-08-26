@@ -71,16 +71,16 @@ export function RiskHeatmap({ risks }) {
   );
 }
 
-function WhyDrawer({ projects, onClose }) {
+function DelayedProjectsDrawer({ projects, onClose }) {
   const contributors = projects.filter(p => p.delayDays > 0).sort((a, b) => b.delayDays - a.delayDays);
   return (
     <div className="fixed inset-0 overlay-dim flex justify-end z-50" onClick={onClose}>
       <div className="w-[420px] h-full bg-sidebar border-l border-default p-5 overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-4">
-          <h3 className="font-semibold text-[14px]">Why is On-Time Delivery declining?</h3>
+          <h3 className="font-semibold text-[14px]">Currently Delayed Projects</h3>
           <button onClick={onClose}><X size={16} className="text-muted" /></button>
         </div>
-        <div className="text-[11px] uppercase tracking-wider text-accent font-semibold mb-2">Contributing projects (traced)</div>
+        <div className="text-[11px] uppercase tracking-wider text-accent font-semibold mb-2">Sorted by days late</div>
         <div className="space-y-2 mb-4">
           {contributors.map(p => (
             <div key={p.id} className="p-2.5 rounded bg-input border border-default">
@@ -176,7 +176,7 @@ export default function ExecutiveDashboard({ darkMode, projects, risks, golive, 
                   <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full" style={{ background: "#EC4899" }} />Vendor SLA</span>
                 </div>
                 <button onClick={() => setWhyOpen(true)} className="text-[11px] font-semibold text-accent hover:underline flex items-center gap-1">
-                  WHY is OTD declining? <ChevronRight size={12} />
+                  View delayed projects <ChevronRight size={12} />
                 </button>
               </div>
             </>
@@ -224,7 +224,7 @@ export default function ExecutiveDashboard({ darkMode, projects, risks, golive, 
         </Card>
       </div>
 
-      {whyOpen && <WhyDrawer projects={projects} onClose={() => setWhyOpen(false)} />}
+      {whyOpen && <DelayedProjectsDrawer projects={projects} onClose={() => setWhyOpen(false)} />}
     </div>
   );
 }
