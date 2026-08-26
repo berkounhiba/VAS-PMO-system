@@ -34,7 +34,7 @@ export function fetchKpis() { return getJSON("/kpis"); }
 
 // --- writes ---
 export function updateTaskStatus(id, status) {
-  return sendJSON(`/tasks/${id}`, "PUT", { status });
+  return sendJSON(`/tasks/${id}/status`, "PUT", { status });
 }
 export function updateProject(id, fields) {
   return sendJSON(`/projects/${id}`, "PUT", fields);
