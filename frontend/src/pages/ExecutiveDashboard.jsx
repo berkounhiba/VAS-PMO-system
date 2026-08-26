@@ -100,13 +100,33 @@ function WhyDrawer({ projects, onClose }) {
 
 export default function ExecutiveDashboard({ darkMode, projects, risks, golive, vendors, kpiHistory }) {
   const total = projects.length;
-  const onTrack = projects.filter((p) => p.health === "Green").length;
+  // All four counted from the SAME field (status) so they add up to
+  // `total` and mean one consistent thing, instead of mixing status
+  // and health as two different classification schemes.
+  const onTrack = projects.filter((p) => p.status === "On Track").length;
   const delayed = projects.filter((p) => p.status === "Delayed").length;
   const blocked = projects.filter((p) => p.status === "Blocked").length;
+  const other = total - onTrack - delayed - blocked; // Not Started / On Hold / etc.
   const avgDelay = total ? (projects.reduce((s, p) => s + (p.delayDays || 0), 0) / total).toFixed(1) : "0";
   const goLiveReady = golive.filter((g) => g.ready).length;
   const criticalRisks = risks.filter((r) => r.score >= 9).length;
   const overdueVendors = vendors.filter((v) => v.status === "Overdue").length;
+
+  // Sort chronologically. `month` is free text like "April 2026" —
+  // new Date("April 2026") isn't a guaranteed-parseable format across
+  // browsers, so instead of trusting Date() to guess it, build an
+  // explicit month-name -> number lookup that always works the same way.
+  const MONTH_ORDER = {
+    January: 0, February: 1, March: 2, April: 3, May: 4, June: 5,
+    July: 6, August: 7, September: 8, October: 9, November: 10, December: 11,
+  };
+  function monthSortKey(monthStr) {
+    const [name, year] = String(monthStr || "").split(" ");
+    return (parseInt(year, 10) || 0) * 12 + (MONTH_ORDER[name] ?? 0);
+  }
+  const sortedKpiHistory = [...kpiHistory].sort(
+    (a, b) => monthSortKey(a.month) - monthSortKey(b.month)
+  );
 
   const [whyOpen, setWhyOpen] = useState(false);
   const chart = darkMode
@@ -124,23 +144,24 @@ export default function ExecutiveDashboard({ darkMode, projects, risks, golive, 
 
       <PortfolioPulse projects={projects} />
 
-      <div className="grid grid-cols-6 gap-3">
+      <div className="grid grid-cols-7 gap-3">
         <KpiCard label="Total Projects" value={total} />
         <KpiCard label="On Track" value={onTrack} />
         <KpiCard label="Delayed" value={delayed} />
         <KpiCard label="Blocked" value={blocked} />
+        <KpiCard label="Other" value={other} />
         <KpiCard label="Critical Risks" value={criticalRisks} />
         <KpiCard label="Go-Live Ready" value={`${goLiveReady}/${golive.length}`} />
       </div>
 
       <div className="grid grid-cols-3 gap-4">
         <Card title="On-Time Delivery Trend" className="col-span-2">
-          {kpiHistory.length === 0 ? (
+          {sortedKpiHistory.length === 0 ? (
             <div className="text-[12px] text-muted py-8 text-center">No KPI history recorded yet.</div>
           ) : (
             <>
               <ResponsiveContainer width="100%" height={200}>
-                <LineChart data={kpiHistory}>
+                <LineChart data={sortedKpiHistory}>
                   <CartesianGrid stroke={chart.grid} strokeDasharray="3 3" vertical={false} />
                   <XAxis dataKey="month" stroke={chart.axis} fontSize={11} tickLine={false} axisLine={false} />
                   <YAxis stroke={chart.axis} fontSize={11} tickLine={false} axisLine={false} width={30} />

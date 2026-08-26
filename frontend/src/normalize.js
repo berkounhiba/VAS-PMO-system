@@ -12,42 +12,55 @@ export function buildLookups(projects, users) {
   return { projectNameById, userNameById };
 }
 
+// Handles BOTH shapes: the backend's new /projects/full endpoint
+// (already JOINed — p.lead is a real name, fields are camelCase)
+// and the old raw /projects endpoint (p.lead_id is a UUID, fields
+// are snake_case). Whichever one is actually live, this works.
 export function normalizeProject(p, { userNameById } = {}) {
+  const lead = p.lead ?? (userNameById && p.lead_id ? userNameById.get(p.lead_id) : undefined) ?? "Unassigned";
   return {
     id: p.id,
     name: p.name,
     domain: p.domain ?? "—",
     business: p.business ?? "—",
-    lead: (userNameById && userNameById.get(p.lead_id)) ?? "Unassigned",
-    track: (p.project_type || "IT").toLowerCase(), // 'it' | 'business'
+    lead,
+    // NOTE: /projects/full doesn't currently SELECT project_type at
+    // all, so track always falls back to 'it' until that's added to
+    // the query (one line: p.project_type AS "projectType").
+    track: (p.projectType || p.project_type || "IT").toLowerCase(),
     priority: p.priority ?? "Medium",
     status: p.status ?? "On Track",
     phase: p.phase ?? "—",
     progress: p.progress !== null && p.progress !== undefined ? Number(p.progress) : null,
-    plannedStart: p.planned_start ?? null,
-    plannedFinish: p.planned_go_live ?? null,
-    forecastFinish: p.forecast_go_live ?? null,
-    delayDays: p.delay_days ?? 0,
+    plannedStart: p.plannedStart ?? p.planned_start ?? null,
+    plannedFinish: p.plannedFinish ?? p.planned_go_live ?? null,
+    forecastFinish: p.forecastFinish ?? p.forecast_go_live ?? null,
+    delayDays: p.delayDays ?? p.delay_days ?? 0,
     health: p.health ?? "Green",
     blocker: p.blocker ?? "",
-    nextAction: p.next_action ?? "—",
+    nextAction: p.nextAction ?? p.next_action ?? "—",
     escalation: p.escalation ?? "No",
     remarks: p.remarks ?? "",
   };
 }
 
-export function normalizeTask(t, { projectNameById, userNameById }) {
+// Same dual-shape handling as normalizeProject — /tasks/full already
+// JOINs project/owner names directly (t.project, t.owner), the old
+// raw /tasks endpoint only has IDs (t.project_id, t.assignee_id).
+export function normalizeTask(t, { projectNameById, userNameById } = {}) {
+  const projectId = t.project_id ?? t.projectId;
+  const assigneeId = t.assignee_id ?? t.assigneeId;
   return {
     id: t.id,
-    project: projectNameById.get(t.project_id) ?? "Unknown project",
-    task: t.title ?? "Untitled task",
-    owner: userNameById.get(t.assignee_id) ?? "Unassigned",
+    project: t.project ?? (projectNameById && projectNameById.get(projectId)) ?? "Unknown project",
+    task: t.task ?? t.title ?? "Untitled task",
+    owner: t.owner ?? (userNameById && userNameById.get(assigneeId)) ?? "Unassigned",
     priority: t.priority ?? "Medium",
     status: t.status ?? "Not Started",
-    start: t.start_date ?? null,
-    finish: t.due_date ?? null,
-    progress: t.progress !== null && t.progress !== undefined ? Number(t.progress) : 0,
-    dependency: t.dependency ?? "",
+    start: t.start ?? t.start_date ?? t.startDate ?? null,
+    finish: t.finish ?? t.due_date ?? t.dueDate ?? null,
+    progress: (t.progress ?? t.progressPct) !== null && (t.progress ?? t.progressPct) !== undefined ? Number(t.progress ?? t.progressPct) : 0,
+    dependency: t.dependency ?? t.dependencyNote ?? "",
     comments: t.comments ?? "",
   };
 }

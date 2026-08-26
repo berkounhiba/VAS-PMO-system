@@ -44,8 +44,10 @@ const NAV = [
 ];
 
 function pickDemoUser(role, users) {
-  if (role === "manager") return users.find((u) => /manager/i.test(u.role))?.name ?? "Manager";
-  if (role === "engineer") return users.find((u) => /engineer/i.test(u.role))?.name ?? "Engineer";
+  // Uses the real is_manager column now that we know it exists,
+  // instead of regex-guessing off the free-text role label.
+  if (role === "manager") return users.find((u) => u.is_manager)?.name ?? "Manager";
+  if (role === "engineer") return users.find((u) => !u.is_manager)?.name ?? "Engineer";
   return "Admin";
 }
 
@@ -103,12 +105,16 @@ export default function App() {
   // Resources for Team Board / Admin — built from real users + real
   // tasks, nothing hardcoded. "Current projects" is derived live from
   // task assignments rather than stored as stale text anywhere.
+  // Schema stores capacity_pct/allocated_pct on a 0-100 scale
+  // (DEFAULT 100 / DEFAULT 0), but every display helper (pct(),
+  // etc.) expects a 0-1 fraction like the rest of the app — divide
+  // by 100 here, once, rather than special-casing it in every page.
   const resources = users.map((u) => ({
     name: u.name,
     role: u.role,
     skills: u.skills ?? "—",
-    capacity: u.capacity_pct !== null && u.capacity_pct !== undefined ? Number(u.capacity_pct) : 1,
-    allocated: u.allocated_pct !== null && u.allocated_pct !== undefined ? Number(u.allocated_pct) : 0,
+    capacity: u.capacity_pct !== null && u.capacity_pct !== undefined ? Number(u.capacity_pct) / 100 : 1,
+    allocated: u.allocated_pct !== null && u.allocated_pct !== undefined ? Number(u.allocated_pct) / 100 : 0,
     projects: [...new Set(tasks.filter((t) => t.owner === u.name).map((t) => t.project))].join(", ") || "—",
   }));
 

@@ -110,9 +110,13 @@ function ProjectDetail({ project: p, tasks, milestones, risks, dependencies, uat
 }
 
 export default function Projects({ projects, tasks, milestones, risks, dependencies, uatSit, golive, vendors, selected, setSelected }) {
+  const [track, setTrack] = useState("it"); // 'it' | 'business'
   const [filterHealth, setFilterHealth] = useState("All");
-  const list = projects.filter((p) => filterHealth === "All" || p.health === filterHealth);
+  const trackList = projects.filter((p) => p.track === track);
+  const list = trackList.filter((p) => filterHealth === "All" || p.health === filterHealth);
   const detail = projects.find((p) => p.name === selected);
+  const itCount = projects.filter((p) => p.track === "it").length;
+  const businessCount = projects.filter((p) => p.track === "business").length;
 
   if (detail) {
     return (
@@ -141,6 +145,21 @@ export default function Projects({ projects, tasks, milestones, risks, dependenc
             </button>
           ))}
         </div>
+      </div>
+
+      <div className="flex gap-2 border-b border-default">
+        <button
+          onClick={() => setTrack("it")}
+          className={`px-4 py-2.5 text-[13px] font-semibold border-b-2 -mb-px ${track === "it" ? "border-accent text-primary" : "border-transparent text-tertiary hover-text-primary"}`}
+        >
+          IT Projects <span className="text-[11px] text-muted font-normal">({itCount})</span>
+        </button>
+        <button
+          onClick={() => setTrack("business")}
+          className={`px-4 py-2.5 text-[13px] font-semibold border-b-2 -mb-px ${track === "business" ? "border-accent text-primary" : "border-transparent text-tertiary hover-text-primary"}`}
+        >
+          Business Projects <span className="text-[11px] text-muted font-normal">({businessCount})</span>
+        </button>
       </div>
       <div className="bg-panel border border-default rounded-md overflow-hidden">
         <table className="w-full text-[12.5px]">
