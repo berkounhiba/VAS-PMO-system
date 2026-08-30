@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { Bot, ShieldAlert, RefreshCw } from "lucide-react";
+import { fetchAIChat } from "../api"; 
 
 export default function AIAssistant({ currentUser, projects, tasks, milestones, risks, resources, dependencies, uatSit, golive, vendors, meetings, kpiHistory }) {
   const [messages, setMessages] = useState([
@@ -25,29 +26,60 @@ export default function AIAssistant({ currentUser, projects, tasks, milestones, 
     setMessages(newMessages);
     setInput("");
     setLoading(true);
+
     try {
-      // NOTE: still a browser-side stub — calls the Anthropic API directly
-      // with no key configured and the full dataset in context. Do NOT
-      // point this at real Ooredoo data. Sprint 5 replaces this with a
-      // backend service using scoped tools (get_project, get_risks, ...)
-      // that only returns what the logged-in user is allowed to see.
-      const context = { projects, milestones, tasks, resources, risks, dependencies, uatSit, golive, vendors, meetings, kpiHistory };
-      const systemPrompt = `You are the VAS AI Operations Assistant for a telecom PMO control tower. Answer the current user's question ONLY using the JSON data provided — never invent projects, names, or numbers not present in it. Structure your answer with short markdown sections: **Answer**, **Evidence**, and where relevant **Analysis** and **Recommendation**. Keep it concise. The current user is ${currentUser}.\n\nDATA:\n${JSON.stringify(context)}`;
-      const response = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: "claude-sonnet-4-6",
-          max_tokens: 1000,
-          system: systemPrompt,
-          messages: [{ role: "user", content: question }],
-        }),
-      });
-      const data = await response.json();
-      const text = data?.content?.find((b) => b.type === "text")?.text || "I couldn't generate a response.";
-      setMessages([...newMessages, { role: "assistant", text }]);
+      // Build a scoped context (cleaner than dumping raw DB rows)
+      const context = {
+        currentUser,
+        projects: projects.map((p) => ({
+          name: p.name,
+          status: p.status,
+          health: p.health,
+          delayDays: p.delayDays,
+          blocker: p.blocker,
+        })),
+        risks: risks.map((r) => ({
+          project: r.project,
+          risk: r.risk,
+          score: r.score,
+          probability: r.probability,
+          impact: r.impact,
+          status: r.status,
+        })),
+        tasks: tasks.map((t) => ({
+          task: t.task,
+          owner: t.owner,
+          status: t.status,
+          finish: t.finish,
+          project: t.project,
+        })),
+        vendors: vendors.map((v) => ({
+          vendor: v.vendor,
+          project: v.project,
+          action: v.action,
+          status: v.status,
+          daysOpen: v.daysOpen,
+          owner: v.owner,
+        })),
+      };
+
+      const data = await fetchAIChat(question, context);
+
+      setMessages([
+        ...newMessages,
+        {
+          role: "assistant",
+          text: data.reply + (data.note ? `\n\n_*${data.note}*_` : ""),
+        },
+      ]);
     } catch (e) {
-      setMessages([...newMessages, { role: "assistant", text: "Something went wrong reaching the AI layer. This is still a prototype stub — Sprint 5 wires this through the real backend AI service." }]);
+      setMessages([
+        ...newMessages,
+        {
+          role: "assistant",
+          text: "AI service unreachable. Confirm the backend is running and the /api/ai/chat route is mounted.",
+        },
+      ]);
     } finally {
       setLoading(false);
     }
@@ -62,7 +94,7 @@ export default function AIAssistant({ currentUser, projects, tasks, milestones, 
 
       <div className="bg-warning border border-warning rounded-md p-3 text-[11.5px] text-warning flex gap-2">
         <ShieldAlert size={15} className="shrink-0 mt-0.5" />
-        <span><strong>Prototype notice:</strong> do not connect this to real Ooredoo data until Legal/InfoSec has approved external data transfer and a backend with scoped, permission-aware tools is in place (Sprint 5).</span>
+        <span><strong>AI Assistant:</strong> Powered by Groq Cloud (free tier) with a built-in fallback. No sensitive data leaves your machine unfiltered — only scoped portfolio summaries are sent.</span>
       </div>
 
       <div className="flex flex-wrap gap-2">

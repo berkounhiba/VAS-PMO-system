@@ -13,8 +13,7 @@ import meetingsRoutes from "./routes/meetings.routes.js";
 import kpisRoutes from "./routes/kpis.routes.js";
 import weeklySummariesRoutes from "./routes/weeklySummaries.routes.js";
 import authRoutes from "./routes/auth.routes.js";
-
-
+import aiRoutes from "./routes/ai.routes.js";
 
 const app = express();
 app.use(cors());
@@ -32,6 +31,7 @@ app.use("/api", weeklySummariesRoutes);
 app.use("/api", vendorsRoutes);
 app.use("/api", meetingsRoutes);
 app.use("/api", kpisRoutes);
+app.use("/api", aiRoutes);
 
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => console.log(`API running on http://localhost:${PORT}`));
