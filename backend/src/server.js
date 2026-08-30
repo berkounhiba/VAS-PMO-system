@@ -1,4 +1,5 @@
 import express from "express";
+import "dotenv/config";
 import cors from "cors";
 import tasksRoutes from "./routes/tasks.routes.js";
 import usersRoutes from "./routes/users.routes.js";
