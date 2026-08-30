@@ -188,3 +188,68 @@ export async function chatWithAI(req, res) {
     });
   }
 }
+export async function draftVendorEmail(req, res) {
+  const { vendor, action, daysOpen, owner, project } = req.body;
+
+  const prompt = `You are a professional telecom PMO manager at Ooredoo. Draft a concise, polite but firm follow-up email to ${vendor} regarding this pending action on project "${project}": "${action}".
+
+This action is ${daysOpen} days overdue. The email should:
+1. Open with a professional greeting
+2. Reference the project and the specific pending action
+3. Note the delay (${daysOpen} days overdue)
+4. Request an immediate status update and ETA
+5. Mention escalation path if not resolved within 48 hours
+6. Close professionally
+
+Sign the email as: ${owner}, VAS PMO Team
+
+Return ONLY the email body text. No markdown code blocks, no explanations.`;
+
+  try {
+    const apiKey = process.env.GROQ_API_KEY;
+    if (!apiKey) throw new Error("No GROQ_API_KEY");
+
+    const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "openai/gpt-oss-20b", 
+        messages: [{ role: "user", content: prompt }],
+        temperature: 0.4,
+        max_tokens: 500,
+      }),
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(`Groq API error: ${response.status} ${errText}`);
+    }
+
+    const data = await response.json();
+    const email = data.choices[0].message.content.trim();
+
+    return res.json({ email, source: "groq-cloud" });
+  } catch (err) {
+    console.warn("Groq email draft failed, using fallback:", err.message);
+    const email = `Subject: Urgent Follow-up – ${project}: ${action}
+
+Dear ${vendor} Team,
+
+I hope this message finds you well.
+
+I am writing to follow up on the pending action for the ${project} project: "${action}". This item is now ${daysOpen} days overdue, and its delay is impacting our delivery timeline.
+
+Could you please provide an immediate status update and confirm the revised ETA for completion? If we do not receive a response within the next 48 hours, we will need to escalate this to senior management.
+
+Thank you for your prompt attention to this matter.
+
+Best regards,
+${owner}
+VAS PMO Team`;
+
+    return res.json({ email, source: "fallback" });
+  }
+}

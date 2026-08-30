@@ -60,3 +60,6 @@ export function deleteMeeting(id) {
     return res.json();
   });
 }
+export function draftVendorEmail(vendor, action, daysOpen, owner, project) {
+  return sendJSON("/ai/draft-email", "POST", { vendor, action, daysOpen, owner, project });
+}
