@@ -37,7 +37,7 @@ const NAV = [
   { id: "projects", label: "Projects", icon: FolderKanban },
   { id: "risks", label: "Risks & Dependencies", icon: ShieldAlert },
   { id: "delivery", label: "Delivery Control", icon: FlaskConical },
-  { id: "vendors", label: "Vendors", icon: Building2 },
+  { id: "vendors", label: "Vendors Actions", icon: Building2 },
   { id: "meetings", label: "Meetings & Actions", icon: CalendarClock },
   { id: "ai", label: "AI Operations Assistant", icon: Bot },
   { id: "admin", label: "Administration", icon: Settings },
@@ -236,11 +236,6 @@ export default function App() {
             <TeamBoard tasks={tasks} resources={resources} onOpenProject={(p) => { setSelectedProject(p); setPage("projects"); }} onCycleStatus={handleCycleTaskStatus} />
           )}
           {page === "team" && !(role === "manager" || role === "admin") && <NoAccess />}
-          {page === "projects" && (
-            <Projects projects={projects} tasks={tasks} milestones={milestones} risks={risks}
-              dependencies={dependencies} uatSit={uatSit} golive={golive} vendors={vendors}
-              selected={selectedProject} setSelected={setSelectedProject} />
-          )}
           {page === "risks" && <RisksDependencies risks={risks} dependencies={dependencies} />}
           {page === "delivery" && <DeliveryControl uatSit={uatSit} golive={golive} />}
           {page === "vendors" && <Vendors role={role} vendors={vendors} />}
@@ -252,6 +247,12 @@ export default function App() {
           )}
           {page === "admin" && hasPerm(role, "*") && <Admin users={users} resources={resources} />}
           {page === "admin" && !hasPerm(role, "*") && <NoAccess />}
+          {page === "projects" && (
+            <Projects projects={projects} tasks={tasks} milestones={milestones} risks={risks}
+            dependencies={dependencies} uatSit={uatSit} golive={golive} vendors={vendors}
+            users={users} role={role}
+            selected={selectedProject} setSelected={setSelectedProject} />
+          )}
         </main>
       </div>
     </div>

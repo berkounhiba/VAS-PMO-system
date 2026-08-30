@@ -11,6 +11,7 @@ import goliveRoutes from "./routes/golive.routes.js";
 import vendorsRoutes from "./routes/vendors.routes.js";
 import meetingsRoutes from "./routes/meetings.routes.js";
 import kpisRoutes from "./routes/kpis.routes.js";
+import aiRoutes from "./routes/ai.routes.js";
 
 
 const app = express();
@@ -27,6 +28,7 @@ app.use("/api", goliveRoutes);
 app.use("/api", vendorsRoutes);
 app.use("/api", meetingsRoutes);
 app.use("/api", kpisRoutes);
+app.use("/api", aiRoutes);
 
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => console.log(`API running on http://localhost:${PORT}`));

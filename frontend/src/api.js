@@ -1,6 +1,3 @@
-/* ============================================================
-   API LAYER — every fetch call, one place, zero hardcoded data.
-============================================================= */
 export const API_BASE = "http://localhost:4000/api";
 
 async function getJSON(path) {
@@ -19,6 +16,12 @@ async function sendJSON(path, method, body) {
   return res.json();
 }
 
+async function del(path) {
+  const res = await fetch(`${API_BASE}${path}`, { method: "DELETE" });
+  if (!res.ok) throw new Error(`${path} returned ${res.status}`);
+  return res.json();
+}
+
 // --- reads ---
 export function fetchProjects() { return getJSON("/projects/full"); }
 export function fetchTasks() { return getJSON("/tasks/full"); }
@@ -31,6 +34,9 @@ export function fetchGolive() { return getJSON("/golive"); }
 export function fetchVendors() { return getJSON("/vendors"); }
 export function fetchMeetings() { return getJSON("/meetings"); }
 export function fetchKpis() { return getJSON("/kpis"); }
+export function fetchAIChat(question, context) {
+  return sendJSON("/ai/chat", "POST", { question, context });
+}
 
 // --- writes ---
 export function updateTaskStatus(id, status) {
@@ -41,4 +47,16 @@ export function updateProject(id, fields) {
 }
 export function createProject(payload) {
   return sendJSON(`/projects`, "POST", payload);
+}
+export function deleteProject(id) {
+  return del(`/projects/${id}`);
+}
+export function createMeeting(payload) {
+  return sendJSON(`/meetings`, "POST", payload);
+}
+export function deleteMeeting(id) {
+  return fetch(`${API_BASE}/meetings/${id}`, { method: "DELETE" }).then((res) => {
+    if (!res.ok) throw new Error(`Delete failed: ${res.status}`);
+    return res.json();
+  });
 }
