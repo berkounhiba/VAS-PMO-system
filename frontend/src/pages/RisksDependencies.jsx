@@ -1,15 +1,22 @@
+import { useState } from "react";
 import { ArrowUpRight } from "lucide-react";
-import { Card, Pill } from "../components/ui";
+import { Card, Pill, MineToggle } from "../components/ui";
 import { fmtDate } from "../utils";
 import { RAG_COLOR } from "../theme";
 
-export default function RisksDependencies({ risks, dependencies }) {
+export default function RisksDependencies({ risks, dependencies, currentUser }) {
+  const [mineOnly, setMineOnly] = useState(false);
+  const shownRisks = mineOnly ? risks.filter((r) => r.owner === currentUser) : risks;
+  const shownDeps = mineOnly ? dependencies.filter((d) => d.owner === currentUser) : dependencies;
   return (
     <div className="space-y-5 max-w-[1200px]">
-      <h1 className="text-xl font-bold">Risks & Dependencies</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-xl font-bold">Risks & Dependencies</h1>
+        <MineToggle active={mineOnly} onToggle={() => setMineOnly((v) => !v)} label="Mine only" />
+      </div>
       <div className="grid grid-cols-2 gap-4">
         <Card title="Risk Register" subtitle="Sorted by severity score">
-          {risks.slice().sort((a, b) => b.score - a.score).map((r) => (
+          {shownRisks.slice().sort((a, b) => b.score - a.score).map((r) => (
             <div key={r.id} className="p-3 rounded bg-sidebar border border-default mb-2 last:mb-0">
               <div className="flex items-center justify-between mb-1">
                 <span className="text-[12.5px] font-medium">{r.risk}</span>
@@ -19,10 +26,10 @@ export default function RisksDependencies({ risks, dependencies }) {
               <div className="text-[11.5px] text-tertiary">Mitigation: {r.mitigation}</div>
             </div>
           ))}
-          {risks.length === 0 && <div className="text-[12px] text-muted">No risks recorded yet.</div>}
+          {shownRisks.length === 0 && <div className="text-[12px] text-muted">No risks to show.</div>}
         </Card>
         <Card title="Dependency Map" subtitle="Cross-project blockers">
-          {dependencies.map((d, i) => (
+          {shownDeps.map((d, i) => (
             <div key={i} className="p-3 rounded bg-sidebar border border-default mb-2 last:mb-0">
               <div className="flex items-center gap-2 text-[12.5px] font-medium">
                 {d.project} <ArrowUpRight size={12} className="text-muted" /> {d.dependsOn}
@@ -33,7 +40,7 @@ export default function RisksDependencies({ risks, dependencies }) {
               </div>
             </div>
           ))}
-          {dependencies.length === 0 && <div className="text-[12px] text-muted">No dependencies recorded yet.</div>}
+          {shownDeps.length === 0 && <div className="text-[12px] text-muted">No dependencies to show.</div>}
         </Card>
       </div>
     </div>

@@ -36,7 +36,7 @@ export default function MyDay({ role, currentUser, tasks, milestones, risks, ven
       </div>
 
       <div className="grid grid-cols-2 gap-4">
-        <Card title="Must do" subtitle="Overdue or blocked — needs action today">
+        <Card title="Urgent" subtitle="Overdue or blocked — needs action today">
           {overdue.length === 0 && myTasks.filter(t => t.status === "Blocked").length === 0 && (
             <div className="text-[12px] text-muted">Nothing overdue. Good position.</div>
           )}
@@ -53,7 +53,7 @@ export default function MyDay({ role, currentUser, tasks, milestones, risks, ven
           </div>
         </Card>
 
-        <Card title="Should do" subtitle="Due within 5 days">
+        <Card title="due soon" subtitle="Due within 5 days">
           {dueSoon.length === 0 && <div className="text-[12px] text-muted">Nothing due this week.</div>}
           <div className="space-y-2">
             {dueSoon.map((t, i) => (

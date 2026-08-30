@@ -1,23 +1,29 @@
-import { Pill } from "../components/ui";
+import { useState } from "react";
+import { Pill, MineToggle } from "../components/ui";
 import { accentFor, fmtDate, pct, taskStatusKey, TASK_STATUS_COLORS } from "../utils";
 import { UTIL_THRESHOLDS } from "../sampleData";
 import { RAG_COLOR } from "../theme";
 
 const STATUS_CYCLE = ["Not Started", "In Progress", "Blocked", "Done"];
 
-export default function TeamBoard({ tasks, resources, onOpenProject, onCycleStatus }) {
-  const members = resources.map((r) => ({
+export default function TeamBoard({ tasks, resources, currentUser, onOpenProject, onCycleStatus }) {
+  const [mineOnly, setMineOnly] = useState(false);
+  const allMembers = resources.map((r) => ({
     ...r,
     tasks: tasks.filter((t) => t.owner === r.name),
   }));
+  const members = mineOnly ? allMembers.filter((m) => m.name === currentUser) : allMembers;
 
   return (
     <div className="space-y-5 max-w-[1200px]">
-      <div>
-        <h1 className="text-xl font-bold">Team Board</h1>
-        <p className="text-[13px] text-muted mt-1">
-          Manager view — click a task's status badge to cycle it (saves live to the database). Click the task itself to open its project.
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-xl font-bold">Team Board</h1>
+          <p className="text-[13px] text-muted mt-1">
+            Everyone's tasks at a glance. You can only advance the status of tasks assigned to you — click any task to open its project.
+          </p>
+        </div>
+        <MineToggle active={mineOnly} onToggle={() => setMineOnly((v) => !v)} label="My Tasks" />
       </div>
 
       <div className="flex flex-wrap gap-4 bg-panel border border-default rounded-md p-3">
@@ -30,7 +36,7 @@ export default function TeamBoard({ tasks, resources, onOpenProject, onCycleStat
       </div>
 
       <div className="space-y-3">
-        {members.length === 0 && <div className="text-[12px] text-muted">No team members loaded yet.</div>}
+        {members.length === 0 && <div className="text-[12px] text-muted">{mineOnly ? "No matching member found." : "No team members loaded yet."}</div>}
         {members.map((m) => (
           <div key={m.name} className="bg-panel border border-default rounded-md p-4">
             <div className="flex items-center justify-between mb-3">
@@ -54,6 +60,7 @@ export default function TeamBoard({ tasks, resources, onOpenProject, onCycleStat
               <div className="flex flex-wrap gap-2">
                 {m.tasks.map((t, i) => {
                   const s = TASK_STATUS_COLORS[taskStatusKey(t)];
+                  const canEdit = t.owner === currentUser; // only the assignee can change their own task's status
                   return (
                     <div
                       key={t.id ?? i}
@@ -64,16 +71,20 @@ export default function TeamBoard({ tasks, resources, onOpenProject, onCycleStat
                     >
                       <div className="font-medium truncate">{t.task}</div>
                       <div className="text-[10.5px] opacity-80 truncate mt-0.5">{t.project} · due {fmtDate(t.finish)}</div>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          const next = STATUS_CYCLE[(STATUS_CYCLE.indexOf(t.status) + 1) % STATUS_CYCLE.length];
-                          onCycleStatus(t.id, next);
-                        }}
-                        className="mt-1.5 text-[10px] font-semibold underline opacity-90 hover:opacity-100"
-                      >
-                        {t.status} → click to advance
-                      </button>
+                      {canEdit ? (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const next = STATUS_CYCLE[(STATUS_CYCLE.indexOf(t.status) + 1) % STATUS_CYCLE.length];
+                            onCycleStatus(t.id, next);
+                          }}
+                          className="mt-1.5 text-[10px] font-semibold underline opacity-90 hover:opacity-100"
+                        >
+                          {t.status} → click to advance
+                        </button>
+                      ) : (
+                        <div className="mt-1.5 text-[10px] font-semibold opacity-70">{t.status}</div>
+                      )}
                     </div>
                   );
                 })}

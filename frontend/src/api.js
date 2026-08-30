@@ -31,6 +31,15 @@ export function fetchGolive() { return getJSON("/golive"); }
 export function fetchVendors() { return getJSON("/vendors"); }
 export function fetchMeetings() { return getJSON("/meetings"); }
 export function fetchKpis() { return getJSON("/kpis"); }
+export function fetchWeeklySummaries() { return getJSON("/weekly-summaries"); }
+
+export async function fetchMe(token) {
+  const res = await fetch(`${API_BASE}/me`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error("Invalid session");
+  return res.json();
+}
 
 // --- writes ---
 export function updateTaskStatus(id, status) {
@@ -41,4 +50,7 @@ export function updateProject(id, fields) {
 }
 export function createProject(payload) {
   return sendJSON(`/projects`, "POST", payload);
+}
+export function createWeeklySummary(payload) {
+  return sendJSON(`/weekly-summaries`, "POST", payload);
 }

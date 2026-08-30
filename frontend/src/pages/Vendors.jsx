@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Send, Lock, X } from "lucide-react";
-import { Card, Pill } from "../components/ui";
+import { Card, Pill, MineToggle } from "../components/ui";
 import { fmtDate } from "../utils";
 import { RAG_COLOR } from "../theme";
 import { hasPerm } from "../roles";
@@ -27,17 +27,22 @@ function VendorDraftModal({ v, onClose }) {
   );
 }
 
-export default function Vendors({ role, vendors }) {
+export default function Vendors({ role, vendors, currentUser }) {
   const [draftFor, setDraftFor] = useState(null);
+  const [mineOnly, setMineOnly] = useState(false);
   const canGenerate = hasPerm(role, "*") || hasPerm(role, "manage_projects");
+  const shown = mineOnly ? vendors.filter((v) => v.owner === currentUser) : vendors;
 
   return (
     <div className="space-y-5 max-w-[1100px]">
-      <h1 className="text-xl font-bold">Vendor Management</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-xl font-bold">Vendor Management</h1>
+        <MineToggle active={mineOnly} onToggle={() => setMineOnly((v) => !v)} label="My Actions" />
+      </div>
       <Card title="Open & Overdue Vendor Actions">
         <div className="space-y-2">
-          {vendors.length === 0 && <div className="text-[12px] text-muted">No vendor actions recorded yet.</div>}
-          {vendors.map((v, i) => (
+          {shown.length === 0 && <div className="text-[12px] text-muted">No vendor actions to show.</div>}
+          {shown.map((v, i) => (
             <div key={i} className="flex items-center justify-between gap-3 p-3 rounded bg-sidebar border border-default">
               <div className="min-w-0">
                 <div className="text-[12.5px] font-medium">{v.vendor} — {v.action}</div>

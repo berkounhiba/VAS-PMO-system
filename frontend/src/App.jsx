@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import {
   LayoutGrid, User, FolderKanban, ShieldAlert, FlaskConical,
   Building2, CalendarClock, Bot, Settings, Search, Bell,
-  Sun, Moon,
+  Sun, Moon, LogOut,
 } from "lucide-react";
 
 import { THEME_CSS } from "./theme";
@@ -11,7 +11,7 @@ import { ROLES, hasPerm } from "./roles";
 import {
   fetchProjects, fetchTasks, fetchUsers, fetchMilestones, fetchRisks,
   fetchDependencies, fetchUatSit, fetchGolive, fetchVendors, fetchMeetings, fetchKpis,
-  updateTaskStatus as apiUpdateTaskStatus,
+  fetchWeeklySummaries, fetchMe, updateTaskStatus as apiUpdateTaskStatus,
 } from "./api";
 import {
   buildLookups, normalizeProject, normalizeTask, normalizeMilestone, normalizeRisk,
@@ -19,6 +19,7 @@ import {
 } from "./normalize";
 import { NoAccess } from "./components/ui";
 
+import Login from "./pages/Login";
 import MyDay from "./pages/MyDay";
 import ExecutiveDashboard from "./pages/ExecutiveDashboard";
 import Projects from "./pages/Projects";
@@ -43,16 +44,12 @@ const NAV = [
   { id: "admin", label: "Administration", icon: Settings },
 ];
 
-function pickDemoUser(role, users) {
-  // Uses the real is_manager column now that we know it exists,
-  // instead of regex-guessing off the free-text role label.
-  if (role === "manager") return users.find((u) => u.is_manager)?.name ?? "Manager";
-  if (role === "engineer") return users.find((u) => !u.is_manager)?.name ?? "Engineer";
-  return "Admin";
-}
-
 export default function App() {
-  const [role, setRole] = useState("manager");
+  // --- real auth state (replaces the old demo role switcher) ---
+  const [authUser, setAuthUser] = useState(null); // { id, name, role, access_level }
+  const [authToken, setAuthToken] = useState(null);
+  const [authChecked, setAuthChecked] = useState(false);
+
   const [darkMode, setDarkMode] = useState(true);
   const mainRef = useRef(null);
   const [page, setPage] = useState("home");
@@ -69,18 +66,56 @@ export default function App() {
   const [rawVendors, setRawVendors] = useState([]);
   const [rawMeetings, setRawMeetings] = useState([]);
   const [rawKpis, setRawKpis] = useState([]);
+  const [weeklySummaries, setWeeklySummaries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
 
+  // --- check for an existing session on load, so refreshing (or
+  // reopening the app later) doesn't ask you to log in again ---
   useEffect(() => {
+    const savedToken = localStorage.getItem("vas_token");
+    if (!savedToken) {
+      setAuthChecked(true);
+      return;
+    }
+    fetchMe(savedToken)
+      .then(({ user }) => {
+        setAuthUser(user);
+        setAuthToken(savedToken);
+        setAuthChecked(true);
+      })
+      .catch(() => {
+        localStorage.removeItem("vas_token");
+        setAuthChecked(true);
+      });
+  }, []);
+
+  function handleLogin(user, token) {
+    setAuthUser(user);
+    setAuthToken(token);
+    setPage("home"); // always land on My Day after logging in, regardless
+                      // of whatever page was open in a previous session
+  }
+
+  function handleLogout() {
+    localStorage.removeItem("vas_token");
+    setAuthUser(null);
+    setAuthToken(null);
+    setPage("home");
+  }
+
+  // --- data fetch only starts once we know who's logged in ---
+  useEffect(() => {
+    if (!authUser) return;
     Promise.all([
       fetchProjects(), fetchTasks(), fetchUsers(), fetchMilestones(), fetchRisks(),
       fetchDependencies(), fetchUatSit(), fetchGolive(), fetchVendors(), fetchMeetings(), fetchKpis(),
+      fetchWeeklySummaries(),
     ])
-      .then(([p, t, u, m, r, dep, uat, gl, v, mt, k]) => {
+      .then(([p, t, u, m, r, dep, uat, gl, v, mt, k, ws]) => {
         setRawProjects(p); setRawTasks(t); setUsers(u); setRawMilestones(m); setRawRisks(r);
         setRawDependencies(dep); setRawUatSit(uat); setRawGolive(gl); setRawVendors(v);
-        setRawMeetings(mt); setRawKpis(k);
+        setRawMeetings(mt); setRawKpis(k); setWeeklySummaries(ws);
         setLoading(false);
       })
       .catch((err) => {
@@ -88,7 +123,7 @@ export default function App() {
         setLoadError(err.message);
         setLoading(false);
       });
-  }, []);
+  }, [authUser]);
 
   const lookups = buildLookups(rawProjects, users);
   const projects = rawProjects.map((p) => normalizeProject(p, lookups));
@@ -102,32 +137,36 @@ export default function App() {
   const meetings = rawMeetings.map((m) => normalizeMeeting(m, lookups));
   const kpiHistory = rawKpis.map(normalizeKpi);
 
-  // Resources for Team Board / Admin — built from real users + real
-  // tasks, nothing hardcoded. "Current projects" is derived live from
-  // task assignments rather than stored as stale text anywhere.
-  // Schema stores capacity_pct/allocated_pct on a 0-100 scale
-  // (DEFAULT 100 / DEFAULT 0), but every display helper (pct(),
-  // etc.) expects a 0-1 fraction like the rest of the app — divide
-  // by 100 here, once, rather than special-casing it in every page.
-  const resources = users.map((u) => ({
-    name: u.name,
-    role: u.role,
-    skills: u.skills ?? "—",
-    capacity: u.capacity_pct !== null && u.capacity_pct !== undefined ? Number(u.capacity_pct) / 100 : 1,
-    allocated: u.allocated_pct !== null && u.allocated_pct !== undefined ? Number(u.allocated_pct) / 100 : 0,
-    projects: [...new Set(tasks.filter((t) => t.owner === u.name).map((t) => t.project))].join(", ") || "—",
-  }));
+  // Admin accounts are system/IT access, not real work-tracked team
+  // members — exclude them from resource capacity views (Team Board,
+  // Admin's Resource Capacity list) so they don't show up as empty
+  // cards with no tasks and no real capacity to speak of.
+  const resources = users
+    .filter((u) => u.access_level !== "admin")
+    .map((u) => ({
+      name: u.name,
+      role: u.role,
+      skills: u.skills ?? "—",
+      capacity: u.capacity_pct !== null && u.capacity_pct !== undefined ? Number(u.capacity_pct) / 100 : 1,
+      allocated: u.allocated_pct !== null && u.allocated_pct !== undefined ? Number(u.allocated_pct) / 100 : 0,
+      projects: [...new Set(tasks.filter((t) => t.owner === u.name).map((t) => t.project))].join(", ") || "—",
+    }));
 
-  const currentUser = pickDemoUser(role, users);
+  // role now comes from the real logged-in account, not a dropdown
+  const role = authUser?.access_level ?? "engineer";
+  const currentUser = authUser?.name ?? "";
 
   useEffect(() => { mainRef.current?.scrollTo(0, 0); }, [page]);
 
   const visibleNav = NAV.filter((n) => {
     if (n.id === "admin") return hasPerm(role, "*");
-    if (n.id === "team") return role === "manager" || role === "admin";
     if (n.id === "vendors" || n.id === "meetings") return role !== "engineer";
-    return true;
+    return true; // Team Board is now visible to everyone, including engineers
   });
+
+  function handleSummaryAdded(newSummary) {
+    setWeeklySummaries((prev) => [newSummary, ...prev]);
+  }
 
   async function handleCycleTaskStatus(taskId, newStatus) {
     try {
@@ -137,6 +176,25 @@ export default function App() {
       console.error("Failed to update task status:", err);
       alert("Couldn't save that status change — check the backend is running.");
     }
+  }
+
+  // --- auth gating: check session -> show login -> then load data ---
+  if (!authChecked) {
+    return (
+      <div className="w-screen h-screen theme-dark bg-app text-primary flex items-center justify-center">
+        <style>{THEME_CSS}</style>
+        <div className="text-[13px] text-muted">Checking session…</div>
+      </div>
+    );
+  }
+
+  if (!authUser) {
+    return (
+      <>
+        <style>{THEME_CSS}</style>
+        <Login onLogin={handleLogin} />
+      </>
+    );
   }
 
   if (loading) {
@@ -191,10 +249,12 @@ export default function App() {
           })}
         </nav>
         <div className="p-3 border-t border-default">
-          <div className="text-[10px] text-muted mb-1.5 px-1 uppercase tracking-wider">Role (demo switcher — real login lands in Sprint 3)</div>
-          <select value={role} onChange={(e) => setRole(e.target.value)} className="w-full bg-input border border-default rounded px-2 py-1.5 text-[12px] text-primary">
-            {Object.entries(ROLES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
-          </select>
+          <button
+            onClick={handleLogout}
+            className="w-full flex items-center justify-center gap-1.5 text-[12px] text-tertiary hover-text-primary border border-default rounded px-2.5 py-1.5"
+          >
+            <LogOut size={13} /> Log out
+          </button>
         </div>
       </aside>
 
@@ -216,7 +276,7 @@ export default function App() {
               </div>
               <div className="leading-none">
                 <div className="text-[12px] font-medium">{currentUser}</div>
-                <div className="text-[10px] text-muted">{ROLES[role].label}</div>
+                <div className="text-[10px] text-muted">{ROLES[role]?.label ?? role}</div>
               </div>
             </div>
           </div>
@@ -232,19 +292,34 @@ export default function App() {
             <ExecutiveDashboard darkMode={darkMode} projects={projects} risks={risks}
               golive={golive} vendors={vendors} kpiHistory={kpiHistory} />
           )}
-          {page === "team" && (role === "manager" || role === "admin") && (
-            <TeamBoard tasks={tasks} resources={resources} onOpenProject={(p) => { setSelectedProject(p); setPage("projects"); }} onCycleStatus={handleCycleTaskStatus} />
+          {page === "team" && (
+            <TeamBoard
+              tasks={tasks}
+              resources={resources}
+              currentUser={currentUser}
+              onOpenProject={(p) => { setSelectedProject(p); setPage("projects"); }}
+              onCycleStatus={handleCycleTaskStatus}
+            />
           )}
-          {page === "team" && !(role === "manager" || role === "admin") && <NoAccess />}
           {page === "projects" && (
             <Projects projects={projects} tasks={tasks} milestones={milestones} risks={risks}
               dependencies={dependencies} uatSit={uatSit} golive={golive} vendors={vendors}
+              currentUser={currentUser}
               selected={selectedProject} setSelected={setSelectedProject} />
           )}
-          {page === "risks" && <RisksDependencies risks={risks} dependencies={dependencies} />}
+          {page === "risks" && <RisksDependencies risks={risks} dependencies={dependencies} currentUser={currentUser} />}
           {page === "delivery" && <DeliveryControl uatSit={uatSit} golive={golive} />}
-          {page === "vendors" && <Vendors role={role} vendors={vendors} />}
-          {page === "meetings" && <Meetings meetings={meetings} />}
+          {page === "vendors" && <Vendors role={role} vendors={vendors} currentUser={currentUser} />}
+          {page === "meetings" && (
+            <Meetings
+              meetings={meetings}
+              users={users}
+              currentUserId={authUser.id}
+              currentUser={currentUser}
+              weeklySummaries={weeklySummaries}
+              onSummaryAdded={handleSummaryAdded}
+            />
+          )}
           {page === "ai" && (
             <AIAssistant currentUser={currentUser} projects={projects} tasks={tasks} milestones={milestones}
               risks={risks} resources={resources} dependencies={dependencies} uatSit={uatSit}

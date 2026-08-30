@@ -92,3 +92,14 @@ export function NoAccess() {
     </div>
   );
 }
+
+export function MineToggle({ active, onToggle, label = "Mine only" }) {
+  return (
+    <button
+      onClick={onToggle}
+      className={`px-2.5 py-1 rounded text-[11px] font-medium border ${active ? "bg-active border-accent text-primary" : "border-default text-tertiary"}`}
+    >
+      {label}
+    </button>
+  );
+}

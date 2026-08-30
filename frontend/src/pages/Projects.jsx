@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Card, KpiCard, Pill, Empty, RowLine, healthColor } from "../components/ui";
+import { Card, KpiCard, Pill, Empty, RowLine, healthColor, MineToggle } from "../components/ui";
 import { fmtDate, pct } from "../utils";
 import { RAG_COLOR } from "../theme";
 
@@ -109,11 +109,13 @@ function ProjectDetail({ project: p, tasks, milestones, risks, dependencies, uat
   );
 }
 
-export default function Projects({ projects, tasks, milestones, risks, dependencies, uatSit, golive, vendors, selected, setSelected }) {
+export default function Projects({ projects, tasks, milestones, risks, dependencies, uatSit, golive, vendors, currentUser, selected, setSelected }) {
   const [track, setTrack] = useState("it"); // 'it' | 'business'
   const [filterHealth, setFilterHealth] = useState("All");
+  const [mineOnly, setMineOnly] = useState(false);
   const trackList = projects.filter((p) => p.track === track);
-  const list = trackList.filter((p) => filterHealth === "All" || p.health === filterHealth);
+  const healthFiltered = trackList.filter((p) => filterHealth === "All" || p.health === filterHealth);
+  const list = mineOnly ? healthFiltered.filter((p) => p.lead === currentUser) : healthFiltered;
   const detail = projects.find((p) => p.name === selected);
   const itCount = projects.filter((p) => p.track === "it").length;
   const businessCount = projects.filter((p) => p.track === "business").length;
@@ -139,6 +141,7 @@ export default function Projects({ projects, tasks, milestones, risks, dependenc
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-bold">Project Portfolio</h1>
         <div className="flex items-center gap-1.5">
+          <MineToggle active={mineOnly} onToggle={() => setMineOnly((v) => !v)} label="My Projects" />
           {["All", "Red", "Amber", "Green", "Unknown"].map((h) => (
             <button key={h} onClick={() => setFilterHealth(h)} className={`px-2.5 py-1 rounded text-[11px] font-medium border ${filterHealth === h ? "bg-active border-accent text-primary" : "border-default text-tertiary"}`}>
               {h}

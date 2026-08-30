@@ -11,6 +11,9 @@ import goliveRoutes from "./routes/golive.routes.js";
 import vendorsRoutes from "./routes/vendors.routes.js";
 import meetingsRoutes from "./routes/meetings.routes.js";
 import kpisRoutes from "./routes/kpis.routes.js";
+import weeklySummariesRoutes from "./routes/weeklySummaries.routes.js";
+import authRoutes from "./routes/auth.routes.js";
+
 
 
 const app = express();
@@ -18,12 +21,14 @@ app.use(cors());
 app.use(express.json());
 app.use("/api", tasksRoutes);
 app.use("/api", usersRoutes);
+app.use("/api", authRoutes);
 app.use("/api", projectsRoutes);
 app.use("/api", milestonesRoutes);
 app.use("/api", risksRoutes);
 app.use("/api", dependenciesRoutes);
 app.use("/api", uatsitRoutes);
 app.use("/api", goliveRoutes);
+app.use("/api", weeklySummariesRoutes);
 app.use("/api", vendorsRoutes);
 app.use("/api", meetingsRoutes);
 app.use("/api", kpisRoutes);
