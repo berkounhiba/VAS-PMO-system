@@ -40,14 +40,24 @@ export async function getBusinessProjects(req, res) {
 }
 
 export async function createProject(req, res) {
-  const { name, domain, business, projectType, priority, status, phase, leadId } = req.body;
+  const {
+    name, domain, business, projectType, priority, status, phase, leadId,
+    plannedStart, plannedGoLive, forecastGoLive,
+  } = req.body;
+
   if (!name) return res.status(400).json({ error: "Project name is required" });
 
   const result = await pool.query(
-    `INSERT INTO projects (name, domain, business, project_type, priority, status, phase, lead_id)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
-    [name, domain || null, business || null, projectType || null,
-     priority || "Medium", status || "On Track", phase || null, leadId || null]
+    `INSERT INTO projects
+       (name, domain, business, project_type, priority, status, phase, lead_id,
+        planned_start, planned_go_live, forecast_go_live)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+     RETURNING *`,
+    [
+      name, domain || null, business || null, projectType || null,
+      priority || "Medium", status || "On Track", phase || null, leadId || null,
+      plannedStart || null, plannedGoLive || null, forecastGoLive || null,
+    ]
   );
   res.status(201).json(result.rows[0]);
 }
@@ -55,7 +65,7 @@ export async function createProject(req, res) {
 const EDITABLE_FIELDS = [
   "name", "domain", "business", "priority", "status", "phase",
   "progress", "blocker", "next_action", "escalation", "remarks",
-  "delay_days", "health", "planned_go_live", "forecast_go_live", "lead_id",
+  "delay_days", "health", "planned_start", "planned_go_live", "forecast_go_live", "lead_id",
 ];
 
 export async function updateProject(req, res) {
