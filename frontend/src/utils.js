@@ -39,3 +39,40 @@ export const TASK_STATUS_COLORS = {
   notStarted: { bg: "#332A5C", border: "#B9A7FF", text: "#D9CFFF", label: "Not Started" },
   inProgress: { bg: "#1E3B33", border: "#7CF0C2", text: "#B4FFE0", label: "In Progress" },
 };
+
+export function fuzzyMatch(query, text) {
+  if (!query || !text) return false;
+  return String(text).toLowerCase().includes(query.toLowerCase());
+}
+
+export function calculateAutoHealth(project, projectTasks, projectMilestones, projectRisks, projectDeps) {
+  let score = 100;
+
+  if (project.delayDays > 30) score -= 40;
+  else if (project.delayDays > 14) score -= 25;
+  else if (project.delayDays > 7) score -= 10;
+  else if (project.delayDays > 0) score -= 5;
+
+  const overdueTasks = (projectTasks || []).filter(t => t.finish && new Date(t.finish) < new Date() && t.status !== "Done");
+  score -= overdueTasks.length * 8;
+
+  const blockedTasks = (projectTasks || []).filter(t => t.status === "Blocked");
+  score -= blockedTasks.length * 12;
+
+  const delayedMilestones = (projectMilestones || []).filter(m => m.status === "Delayed" || m.status === "Blocked");
+  score -= delayedMilestones.length * 10;
+
+  const highRisks = (projectRisks || []).filter(r => r.score >= 9 && r.status === "Open");
+  score -= highRisks.length * 15;
+  const medRisks = (projectRisks || []).filter(r => r.score >= 6 && r.score < 9 && r.status === "Open");
+  score -= medRisks.length * 8;
+
+  const blockedDeps = (projectDeps || []).filter(d => d.status === "Blocked");
+  score -= blockedDeps.length * 10;
+
+  if (project.progress !== null && project.progress < 0.3 && project.delayDays > 14) score -= 10;
+
+  if (score >= 75) return "Green";
+  if (score >= 45) return "Amber";
+  return "Red";
+}

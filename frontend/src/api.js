@@ -118,3 +118,12 @@ export function deleteMeeting(id) {
     return res.json();
   });
 }
+
+export function generateWeeklyReport(context) {
+  return sendJSON("/ai/weekly-report", "POST", { context });
+}
+
+export function summarizeMeetingMinutes(notes) {
+  return sendJSON("/ai/meeting-minutes", "POST", { notes });
+}
+

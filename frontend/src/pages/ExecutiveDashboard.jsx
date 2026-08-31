@@ -5,6 +5,9 @@ import {
 import { ChevronRight, X } from "lucide-react";
 import { Card, KpiCard, Pill, healthColor } from "../components/ui";
 import { RAG_COLOR } from "../theme";
+import { Sunrise, RefreshCw } from "lucide-react";
+import { fetchAIChat } from "../api";
+
 
 export function PortfolioPulse({ projects }) {
   const counts = { Red: 0, Amber: 0, Green: 0, Unknown: 0 };
@@ -27,6 +30,12 @@ export function PortfolioPulse({ projects }) {
           <div key={s.k} style={{ width: `${(s.v / total) * 100}%`, background: s.c }} title={`${s.label}: ${s.v}`} />
         ))}
       </div>
+      <button
+        onClick={() => window.print()}
+        className="px-3 py-1.5 rounded border border-default text-[11px] font-medium text-tertiary hover:bg-input no-print"
+      >
+        🖨️ Export PDF
+      </button>
       <div className="flex gap-5 mt-3 flex-wrap">
         {segs.map((s) => (
           <div key={s.k} className="flex items-center gap-1.5 text-[12px] text-secondary">
@@ -98,7 +107,9 @@ function DelayedProjectsDrawer({ projects, onClose }) {
   );
 }
 
-export default function ExecutiveDashboard({ darkMode, projects, risks, golive, vendors, kpiHistory }) {
+export default function ExecutiveDashboard({ darkMode, projects, risks, golive, vendors, kpiHistory, tasks, currentUser, meetings }) {
+  const [brief, setBrief] = useState(null);
+  const [briefLoading, setBriefLoading] = useState(false);
   const total = projects.length;
   // All four counted from the SAME field (status) so they add up to
   // `total` and mean one consistent thing, instead of mixing status
@@ -124,6 +135,24 @@ export default function ExecutiveDashboard({ darkMode, projects, risks, golive, 
     const [name, year] = String(monthStr || "").split(" ");
     return (parseInt(year, 10) || 0) * 12 + (MONTH_ORDER[name] ?? 0);
   }
+  async function generateMorningBrief() {
+    setBriefLoading(true);
+    try {
+      const context = {
+        currentUser: currentUser || "Director",
+        projects: projects.map(p => ({ name: p.name, status: p.status, health: p.health, delayDays: p.delayDays, blocker: p.blocker })),
+        risks: risks.filter(r => r.status === "Open").map(r => ({ project: r.project, risk: r.risk, score: r.score })),
+        tasks: tasks.filter(t => t.status !== "Done").map(t => ({ task: t.task, owner: t.owner, status: t.status, finish: t.finish })),
+        vendors: vendors.filter(v => v.status === "Overdue").map(v => ({ vendor: v.vendor, action: v.action, daysOpen: v.daysOpen })),
+      };
+      const data = await fetchAIChat("Prepare my morning brief for the director", context);
+      setBrief(data.reply);
+    } catch (e) {
+      setBrief("Could not generate morning brief. Check backend connection.");
+    } finally {
+      setBriefLoading(false);
+    }
+  }
   const sortedKpiHistory = [...kpiHistory].sort(
     (a, b) => monthSortKey(a.month) - monthSortKey(b.month)
   );
@@ -143,6 +172,30 @@ export default function ExecutiveDashboard({ darkMode, projects, risks, golive, 
       </div>
 
       <PortfolioPulse projects={projects} />
+
+      <div className="flex items-center justify-between bg-panel border border-default rounded-md p-3 no-print">
+        <div className="flex items-center gap-2">
+          <Sunrise size={16} className="text-accent" />
+          <span className="text-[12.5px] font-medium text-primary">Morning Brief</span>
+          <span className="text-[11px] text-muted">AI-generated executive summary</span>
+        </div>
+        <button
+          onClick={generateMorningBrief}
+          disabled={briefLoading}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-accent text-white text-[11px] font-medium hover:opacity-90 disabled:opacity-50"
+        >
+          {briefLoading ? <RefreshCw size={12} className="animate-spin" /> : <Sunrise size={12} />}
+          {briefLoading ? "Generating…" : "Generate Brief"}
+        </button>
+      </div>
+
+      {brief && (
+        <Card title="Director's Morning Brief" className="bg-warning border-warning">
+          <div className="text-[12.5px] leading-relaxed whitespace-pre-wrap text-secondary">
+            {brief}
+          </div>
+        </Card>
+      )}
 
       <div className="grid grid-cols-7 gap-3">
         <KpiCard label="Total Projects" value={total} />
@@ -227,4 +280,23 @@ export default function ExecutiveDashboard({ darkMode, projects, risks, golive, 
       {whyOpen && <DelayedProjectsDrawer projects={projects} onClose={() => setWhyOpen(false)} />}
     </div>
   );
+}
+
+async function generateReport() {
+  setReportLoading(true);
+  try {
+    const context = {
+      projects: projects.map(p => ({ name: p.name, status: p.status, health: p.health, delayDays: p.delayDays, blocker: p.blocker })),
+      risks: risks.filter(r => r.status === "Open").map(r => ({ project: r.project, risk: r.risk, score: r.score })),
+      vendors: vendors.filter(v => v.status === "Overdue").map(v => ({ vendor: v.vendor, action: v.action, daysOpen: v.daysOpen })),
+      kpiHistory: kpiHistory.slice(-3),
+      meetings: meetings.slice(-3).map(m => ({ topic: m.topic, decision: m.decision, action: m.action })),
+    };
+    const data = await generateWeeklyReport(context);
+    setReport(data.report);
+  } catch (e) {
+    setReport("Could not generate weekly report. Check backend connection.");
+  } finally {
+    setReportLoading(false);
+  }
 }

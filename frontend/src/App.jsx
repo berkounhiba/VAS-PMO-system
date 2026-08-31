@@ -2,11 +2,11 @@ import { useState, useRef, useEffect } from "react";
 import {
   LayoutGrid, User, FolderKanban, ShieldAlert, FlaskConical,
   Building2, CalendarClock, Bot, Settings, Search, Bell,
-  Sun, Moon, LogOut,
+  Sun, Moon, LogOut, FileText, ClipboardList,
 } from "lucide-react";
 
 import { THEME_CSS } from "./theme";
-import { accentFor } from "./utils";
+import { accentFor, fuzzyMatch, calculateAutoHealth } from "./utils";
 import { ROLES, hasPerm } from "./roles";
 import {
   fetchProjects, fetchTasks, fetchUsers, fetchMilestones, fetchRisks,
@@ -18,7 +18,6 @@ import {
   normalizeDependency, normalizeUatSit, normalizeGolive, normalizeVendor, normalizeMeeting, normalizeKpi,
 } from "./normalize";
 import { NoAccess } from "./components/ui";
-
 import Login from "./pages/Login";
 import MyDay from "./pages/MyDay";
 import ExecutiveDashboard from "./pages/ExecutiveDashboard";
@@ -27,9 +26,11 @@ import TeamBoard from "./pages/TeamBoard";
 import RisksDependencies from "./pages/RisksDependencies";
 import DeliveryControl from "./pages/DeliveryControl";
 import Vendors from "./pages/Vendors";
-import Meetings from "./pages/Meetings";    
+import Meetings from "./pages/Meetings";
 import AIAssistant from "./pages/AIAssistant";
 import Admin from "./pages/Admin";
+import ProjectTimeline from "./pages/ProjectTimeline";
+
 
 const NAV = [
   { id: "home", label: "My Day", icon: User },
@@ -42,11 +43,11 @@ const NAV = [
   { id: "meetings", label: "Meetings & Actions", icon: CalendarClock },
   { id: "ai", label: "AI Operations Assistant", icon: Bot },
   { id: "admin", label: "Administration", icon: Settings },
+  { id: "timeline", label: "Timeline", icon: CalendarClock },
 ];
 
 export default function App() {
-  // --- real auth state (replaces the old demo role switcher) ---
-  const [authUser, setAuthUser] = useState(null); // { id, name, role, access_level }
+  const [authUser, setAuthUser] = useState(null);
   const [authToken, setAuthToken] = useState(null);
   const [authChecked, setAuthChecked] = useState(false);
 
@@ -70,8 +71,6 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
 
-  // --- check for an existing session on load, so refreshing (or
-  // reopening the app later) doesn't ask you to log in again ---
   useEffect(() => {
     const savedToken = localStorage.getItem("vas_token");
     if (!savedToken) {
@@ -93,8 +92,7 @@ export default function App() {
   function handleLogin(user, token) {
     setAuthUser(user);
     setAuthToken(token);
-    setPage("home"); // always land on My Day after logging in, regardless
-                      // of whatever page was open in a previous session
+    setPage("home");
   }
 
   function handleLogout() {
@@ -104,7 +102,6 @@ export default function App() {
     setPage("home");
   }
 
-  // --- data fetch only starts once we know who's logged in ---
   useEffect(() => {
     if (!authUser) return;
     Promise.all([
@@ -126,7 +123,7 @@ export default function App() {
   }, [authUser]);
 
   const lookups = buildLookups(rawProjects, users);
-  const projects = rawProjects.map((p) => normalizeProject(p, lookups));
+
   const tasks = rawTasks.map((t) => normalizeTask(t, lookups));
   const milestones = rawMilestones.map((m) => normalizeMilestone(m, lookups));
   const risks = rawRisks.map((r) => normalizeRisk(r, lookups));
@@ -137,10 +134,18 @@ export default function App() {
   const meetings = rawMeetings.map((m) => normalizeMeeting(m, lookups));
   const kpiHistory = rawKpis.map(normalizeKpi);
 
-  // Admin accounts are system/IT access, not real work-tracked team
-  // members — exclude them from resource capacity views (Team Board,
-  // Admin's Resource Capacity list) so they don't show up as empty
-  // cards with no tasks and no real capacity to speak of.
+  const projects = rawProjects.map((p) => {
+    const normalized = normalizeProject(p, lookups);
+    const pTasks = rawTasks.filter((t) => t.project_id === p.id || t.project === p.name);
+    const pMilestones = rawMilestones.filter((m) => m.project_id === p.id);
+    const pRisks = rawRisks.filter((r) => r.project_id === p.id);
+    const pDeps = rawDependencies.filter((d) => d.project_id === p.id);
+    return {
+      ...normalized,
+      health: calculateAutoHealth(normalized, pTasks, pMilestones, pRisks, pDeps),
+    };
+  });
+
   const resources = users
     .filter((u) => u.access_level !== "admin")
     .map((u) => ({
@@ -152,7 +157,6 @@ export default function App() {
       projects: [...new Set(tasks.filter((t) => t.owner === u.name).map((t) => t.project))].join(", ") || "—",
     }));
 
-  // role now comes from the real logged-in account, not a dropdown
   const role = authUser?.access_level ?? "engineer";
   const currentUser = authUser?.name ?? "";
 
@@ -161,7 +165,7 @@ export default function App() {
   const visibleNav = NAV.filter((n) => {
     if (n.id === "admin") return hasPerm(role, "*");
     if (n.id === "vendors" || n.id === "meetings") return role !== "engineer";
-    return true; // Team Board is now visible to everyone, including engineers
+    return true;
   });
 
   function handleSummaryAdded(newSummary) {
@@ -178,7 +182,6 @@ export default function App() {
     }
   }
 
-  // --- auth gating: check session -> show login -> then load data ---
   if (!authChecked) {
     return (
       <div className="w-screen h-screen theme-dark bg-app text-primary flex items-center justify-center">
@@ -260,10 +263,17 @@ export default function App() {
 
       <div className="flex-1 flex flex-col min-w-0">
         <header className="h-14 border-b border-default flex items-center justify-between px-5 shrink-0 bg-app">
-          <div className="flex items-center gap-2 bg-input border border-default rounded px-3 py-1.5 w-[340px]">
-            <Search size={14} className="text-muted" />
-            <input placeholder="Search projects, risks, vendors, people…" className="bg-transparent outline-none text-[12px] placeholder-dim w-full" />
-          </div>
+          <SearchBar
+            projects={projects}
+            tasks={tasks}
+            risks={risks}
+            vendors={vendors}
+            users={users}
+            onNavigate={(newPage, item) => {
+              setPage(newPage);
+              if (item) setSelectedProject(item);
+            }}
+          />
           <div className="flex items-center gap-4">
             <button onClick={() => setDarkMode((d) => !d)} className="flex items-center gap-1.5 text-tertiary hover-text-primary border border-default rounded px-2.5 py-1.5 text-[11px] font-medium">
               {darkMode ? <Sun size={14} /> : <Moon size={14} />}
@@ -290,7 +300,7 @@ export default function App() {
           )}
           {page === "exec" && (
             <ExecutiveDashboard darkMode={darkMode} projects={projects} risks={risks}
-              golive={golive} vendors={vendors} kpiHistory={kpiHistory} />
+              golive={golive} vendors={vendors} kpiHistory={kpiHistory} meetings={meetings} />
           )}
           {page === "team" && (
             <TeamBoard
@@ -318,7 +328,6 @@ export default function App() {
               setSelected={setSelectedProject}
             />
           )}
-
           {page === "risks" && (
             <RisksDependencies
               risks={risks}
@@ -326,11 +335,9 @@ export default function App() {
               currentUser={currentUser}
             />
           )}
-
           {page === "delivery" && (
             <DeliveryControl uatSit={uatSit} golive={golive} />
           )}
-
           {page === "vendors" && (
             <Vendors
               role={role}
@@ -338,7 +345,6 @@ export default function App() {
               currentUser={currentUser}
             />
           )}
-
           {page === "meetings" && (
             <Meetings
               meetings={meetings}
@@ -349,7 +355,6 @@ export default function App() {
               onSummaryAdded={handleSummaryAdded}
             />
           )}
-
           {page === "ai" && (
             <AIAssistant
               currentUser={currentUser}
@@ -366,14 +371,71 @@ export default function App() {
               kpiHistory={kpiHistory}
             />
           )}
-
           {page === "admin" && hasPerm(role, "*") && (
             <Admin users={users} resources={resources} />
           )}
-
           {page === "admin" && !hasPerm(role, "*") && <NoAccess />}
+          {page === "timeline" && <ProjectTimeline projects={projects} />}
         </main>
       </div>
+    </div>
+  );
+}
+
+function SearchBar({ projects, tasks, risks, vendors, users, onNavigate }) {
+  const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    function handleClick(e) {
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, []);
+
+  const results = [];
+  if (query.length >= 2) {
+    projects.filter(p => fuzzyMatch(query, p.name)).forEach(p => results.push({ type: "Project", label: p.name, sub: p.status, page: "projects", item: p.name }));
+    tasks.filter(t => fuzzyMatch(query, t.task)).forEach(t => results.push({ type: "Task", label: t.task, sub: t.project, page: "projects", item: t.project }));
+    risks.filter(r => fuzzyMatch(query, r.risk)).forEach(r => results.push({ type: "Risk", label: r.risk, sub: r.project, page: "risks" }));
+    vendors.filter(v => fuzzyMatch(query, v.vendor) || fuzzyMatch(query, v.action)).forEach(v => results.push({ type: "Vendor", label: v.vendor, sub: v.action, page: "vendors" }));
+    users.filter(u => fuzzyMatch(query, u.name)).forEach(u => results.push({ type: "Person", label: u.name, sub: u.role, page: "team" }));
+  }
+
+  return (
+    <div ref={ref} className="relative w-[340px]">
+      <div className="flex items-center gap-2 bg-input border border-default rounded px-3 py-1.5">
+        <Search size={14} className="text-muted" />
+        <input
+          value={query}
+          onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
+          onFocus={() => setOpen(true)}
+          placeholder="Search projects, risks, vendors, people…"
+          className="bg-transparent outline-none text-[12px] placeholder-dim w-full"
+        />
+      </div>
+      {open && results.length > 0 && (
+        <div className="absolute top-full left-0 right-0 mt-1 bg-panel border border-default rounded-md shadow-lg max-h-[320px] overflow-y-auto z-50">
+          {results.slice(0, 8).map((r, i) => (
+            <button
+              key={i}
+              onClick={() => { onNavigate(r.page, r.item); setQuery(""); setOpen(false); }}
+              className="w-full text-left px-3 py-2 hover:bg-active border-b border-default last:border-0 flex items-center justify-between"
+            >
+              <div>
+                <div className="text-[12px] font-medium text-primary">{r.label}</div>
+                <div className="text-[11px] text-muted">{r.type} · {r.sub}</div>
+              </div>
+              <span className="text-[10px] text-accent uppercase tracking-wider">{r.type}</span>
+            </button>
+          ))}
+        </div>
+      )}
+      {open && query.length >= 2 && results.length === 0 && (
+        <div className="absolute top-full left-0 right-0 mt-1 bg-panel border border-default rounded-md p-3 text-[12px] text-muted z-50">No results found.</div>
+      )}
     </div>
   );
 }

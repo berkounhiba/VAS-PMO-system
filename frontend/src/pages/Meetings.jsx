@@ -2,7 +2,18 @@ import { useState } from "react";
 import { Card, MineToggle } from "../components/ui";
 import { fmtDate } from "../utils";
 import { getTuesdayOfWeek, getSummaryTurn } from "../rotation";
-import { createWeeklySummary, createMeeting, deleteMeeting } from "../api";
+import {
+  createWeeklySummary,
+  createMeeting,
+  deleteMeeting,
+  summarizeMeetingMinutes,
+} from "../api";
+import { Sparkles, Copy, Check, Trash2 } from "lucide-react";
+
+
+/* =========================================================
+   WEEKLY TEAM MEETING
+   ========================================================= */
 
 function WeeklyTeamMeeting({
   users,
@@ -112,6 +123,11 @@ function WeeklyTeamMeeting({
   );
 }
 
+
+/* =========================================================
+   NEW MEETING FORM
+   ========================================================= */
+
 function NewMeetingForm({ onSaved, onCancel }) {
   const [topic, setTopic] = useState("");
   const [decision, setDecision] = useState("");
@@ -127,9 +143,9 @@ function NewMeetingForm({ onSaved, onCancel }) {
 
     try {
       const meeting = await createMeeting({
-        topic,
-        decision,
-        action,
+        topic: topic.trim(),
+        decision: decision.trim(),
+        action: action.trim(),
         meetingDate: date || null,
         meetingTime: time || null,
         status: "Planned",
@@ -145,45 +161,76 @@ function NewMeetingForm({ onSaved, onCancel }) {
   }
 
   return (
-    <div className="p-4 rounded bg-sidebar border border-default space-y-2 mb-3">
-      <input
-        value={topic}
-        onChange={(e) => setTopic(e.target.value)}
-        placeholder="Meeting topic (required)"
-        className="w-full bg-input border border-default rounded px-3 py-2 text-[12.5px] outline-none"
-      />
+    <div className="p-4 rounded bg-sidebar border border-default space-y-3 mb-3">
 
-      <div className="flex gap-2">
-        <input
-          type="date"
-          value={date}
-          onChange={(e) => setDate(e.target.value)}
-          className="flex-1 bg-input border border-default rounded px-3 py-2 text-[12.5px] outline-none"
-        />
+      <div>
+        <label className="block text-[11px] text-muted mb-1">
+          Meeting topic
+        </label>
 
         <input
-          type="time"
-          value={time}
-          onChange={(e) => setTime(e.target.value)}
-          className="flex-1 bg-input border border-default rounded px-3 py-2 text-[12.5px] outline-none"
+          value={topic}
+          onChange={(e) => setTopic(e.target.value)}
+          placeholder="Meeting topic (required)"
+          className="w-full bg-input border border-default rounded px-3 py-2 text-[12.5px] outline-none focus:border-accent"
         />
       </div>
 
-      <input
-        value={decision}
-        onChange={(e) => setDecision(e.target.value)}
-        placeholder="Decision"
-        className="w-full bg-input border border-default rounded px-3 py-2 text-[12.5px] outline-none"
-      />
+      <div className="flex gap-2">
+        <div className="flex-1">
+          <label className="block text-[11px] text-muted mb-1">
+            Date
+          </label>
 
-      <input
-        value={action}
-        onChange={(e) => setAction(e.target.value)}
-        placeholder="Action item"
-        className="w-full bg-input border border-default rounded px-3 py-2 text-[12.5px] outline-none"
-      />
+          <input
+            type="date"
+            value={date}
+            onChange={(e) => setDate(e.target.value)}
+            className="w-full bg-input border border-default rounded px-3 py-2 text-[12.5px] outline-none focus:border-accent"
+          />
+        </div>
 
-      <div className="flex gap-2 justify-end">
+        <div className="flex-1">
+          <label className="block text-[11px] text-muted mb-1">
+            Time
+          </label>
+
+          <input
+            type="time"
+            value={time}
+            onChange={(e) => setTime(e.target.value)}
+            className="w-full bg-input border border-default rounded px-3 py-2 text-[12.5px] outline-none focus:border-accent"
+          />
+        </div>
+      </div>
+
+      <div>
+        <label className="block text-[11px] text-muted mb-1">
+          Decision
+        </label>
+
+        <input
+          value={decision}
+          onChange={(e) => setDecision(e.target.value)}
+          placeholder="What was decided?"
+          className="w-full bg-input border border-default rounded px-3 py-2 text-[12.5px] outline-none focus:border-accent"
+        />
+      </div>
+
+      <div>
+        <label className="block text-[11px] text-muted mb-1">
+          Action item
+        </label>
+
+        <input
+          value={action}
+          onChange={(e) => setAction(e.target.value)}
+          placeholder="What needs to be done?"
+          className="w-full bg-input border border-default rounded px-3 py-2 text-[12.5px] outline-none focus:border-accent"
+        />
+      </div>
+
+      <div className="flex gap-2 justify-end pt-1">
         <button
           onClick={onCancel}
           className="text-[12px] px-3 py-1.5 rounded border border-default text-tertiary"
@@ -203,6 +250,132 @@ function NewMeetingForm({ onSaved, onCancel }) {
   );
 }
 
+
+/* =========================================================
+   AI MEETING MINUTES
+   ========================================================= */
+
+function AIMeetingMinutes() {
+  const [notes, setNotes] = useState("");
+  const [summary, setSummary] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  async function handleSummarize() {
+    if (!notes.trim()) return;
+
+    setLoading(true);
+    setCopied(false);
+
+    try {
+      const data = await summarizeMeetingMinutes(notes);
+
+      setSummary(data.summary);
+    } catch (err) {
+      console.error(err);
+      setSummary("Failed to summarize. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function copySummary() {
+    if (!summary) return;
+
+    try {
+      await navigator.clipboard.writeText(summary);
+
+      setCopied(true);
+
+      setTimeout(() => {
+        setCopied(false);
+      }, 2000);
+    } catch (err) {
+      console.error("Copy failed:", err);
+    }
+  }
+
+  return (
+    <Card
+      title="AI Meeting Minutes"
+      subtitle="Paste raw notes → get structured minutes"
+    >
+      <div className="space-y-3">
+
+        <textarea
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          placeholder={`Paste raw meeting notes here...
+
+Example:
+- Amir said security audit is 80% done
+- Decision: Go-Live pushed to Sept 15
+- Action: Nesrine to follow up with DBA by Friday
+- Risk: Flag V1.1 might miss marketing deadline`}
+          className="w-full h-32 bg-input border border-default rounded-md p-3 text-[12.5px] text-primary placeholder-dim resize-none outline-none focus:border-accent"
+        />
+
+        <div className="flex justify-between items-center">
+
+          <span className="text-[11px] text-muted">
+            AI extracts decisions, actions, risks, and next steps.
+          </span>
+
+          <button
+            onClick={handleSummarize}
+            disabled={loading || !notes.trim()}
+            className="flex items-center gap-2 px-4 py-2 rounded bg-accent text-white text-[12px] font-medium hover:opacity-90 disabled:opacity-50"
+          >
+            <Sparkles
+              size={14}
+              className={loading ? "animate-spin" : ""}
+            />
+
+            {loading ? "Analyzing…" : "Summarize"}
+          </button>
+        </div>
+
+        {summary && (
+          <div className="mt-4 border-t border-default pt-4">
+
+            <div className="flex items-center justify-between mb-2">
+
+              <span className="text-[12px] font-semibold text-secondary">
+                Structured Minutes
+              </span>
+
+              <button
+                onClick={copySummary}
+                className="flex items-center gap-1 text-[11px] text-accent hover:underline"
+              >
+                {copied ? (
+                  <Check size={12} />
+                ) : (
+                  <Copy size={12} />
+                )}
+
+                {copied ? "Copied!" : "Copy"}
+              </button>
+
+            </div>
+
+            <div className="bg-sidebar border border-default rounded-md p-3 text-[12px] whitespace-pre-wrap font-mono leading-relaxed text-secondary">
+              {summary}
+            </div>
+
+          </div>
+        )}
+
+      </div>
+    </Card>
+  );
+}
+
+
+/* =========================================================
+   MAIN MEETINGS PAGE
+   ========================================================= */
+
 export default function Meetings({
   meetings,
   users,
@@ -213,6 +386,7 @@ export default function Meetings({
 }) {
   const [mineOnly, setMineOnly] = useState(false);
   const [showForm, setShowForm] = useState(false);
+  const [showAI, setShowAI] = useState(false);
 
   // Local copy so newly created/deleted meetings appear immediately.
   const [items, setItems] = useState(
@@ -222,6 +396,11 @@ export default function Meetings({
   const shownMeetings = mineOnly
     ? items.filter((m) => m.owner === currentUser)
     : items;
+
+
+  /* ---------------------------------------------------------
+     DELETE MEETING
+     --------------------------------------------------------- */
 
   async function handleDelete(id) {
     if (!id) return;
@@ -240,15 +419,46 @@ export default function Meetings({
     }
   }
 
+
+  /* ---------------------------------------------------------
+     ADD MEETING TO LOCAL LIST
+     --------------------------------------------------------- */
+
+  function handleMeetingSaved(m) {
+    setItems((prev) => [
+      {
+        id: m.id,
+        topic: m.topic,
+        decision: m.decision,
+        action: m.action,
+        date: m.meeting_date ?? m.meetingDate,
+        time: m.meeting_time ?? m.meetingTime,
+        owner: m.owner ?? "—",
+        project: m.project ?? "Portfolio",
+        status: m.status,
+      },
+      ...prev,
+    ]);
+
+    setShowForm(false);
+  }
+
+
   return (
     <div className="space-y-5 max-w-[1000px]">
 
+      {/* =====================================================
+          HEADER
+          ===================================================== */}
+
       <div className="flex items-center justify-between">
+
         <h1 className="text-xl font-bold">
           Meetings & Action Items
         </h1>
 
         <div className="flex items-center gap-2">
+
           <MineToggle
             active={mineOnly}
             onToggle={() => setMineOnly((v) => !v)}
@@ -256,37 +466,48 @@ export default function Meetings({
           />
 
           <button
+            onClick={() => setShowAI((v) => !v)}
+            className="flex items-center gap-2 text-[12px] px-3 py-1.5 rounded border border-default text-accent hover:bg-sidebar"
+          >
+            <Sparkles size={14} />
+
+            {showAI ? "Close AI" : "AI Minutes"}
+          </button>
+
+          <button
             onClick={() => setShowForm((s) => !s)}
             className="text-[12px] px-3 py-1.5 rounded bg-accent text-white font-medium"
           >
             {showForm ? "Close" : "+ New Meeting"}
           </button>
+
         </div>
+
       </div>
+
+
+      {/* =====================================================
+          NEW MEETING FORM
+          ===================================================== */}
 
       {showForm && (
         <NewMeetingForm
           onCancel={() => setShowForm(false)}
-          onSaved={(m) => {
-            setItems((prev) => [
-              {
-                id: m.id,
-                topic: m.topic,
-                decision: m.decision,
-                action: m.action,
-                date: m.meeting_date ?? m.meetingDate,
-                time: m.meeting_time ?? m.meetingTime,
-                owner: m.owner ?? "—",
-                project: m.project ?? "Portfolio",
-                status: m.status,
-              },
-              ...prev,
-            ]);
-
-            setShowForm(false);
-          }}
+          onSaved={handleMeetingSaved}
         />
       )}
+
+
+      {/* =====================================================
+          AI MEETING MINUTES
+          ===================================================== */}
+
+      {showAI && <AIMeetingMinutes />}
+
+
+      {/* =====================================================
+          WEEKLY TEAM MEETING
+          ===================================================== */}
 
       <WeeklyTeamMeeting
         users={users}
@@ -295,14 +516,22 @@ export default function Meetings({
         onSummaryAdded={onSummaryAdded}
       />
 
+
+      {/* =====================================================
+          PAST WEEKLY SUMMARIES
+          ===================================================== */}
+
       {weeklySummaries.length > 1 && (
         <Card title="Past Weekly Summaries">
+
           <div className="space-y-2">
+
             {weeklySummaries.slice(1).map((s) => (
               <div
                 key={s.id}
                 className="p-2.5 rounded bg-sidebar border border-default"
               >
+
                 <div className="text-[11px] text-muted mb-1">
                   {fmtDate(s.meetingDate)} · {s.authorName}
                 </div>
@@ -310,13 +539,22 @@ export default function Meetings({
                 <div className="text-[12px] text-tertiary whitespace-pre-wrap">
                   {s.summary}
                 </div>
+
               </div>
             ))}
+
           </div>
+
         </Card>
       )}
 
+
+      {/* =====================================================
+          RECENT & UPCOMING MEETINGS
+          ===================================================== */}
+
       <Card title="Recent & Upcoming">
+
         {shownMeetings.length === 0 && (
           <div className="text-[12px] text-muted">
             No meetings to show.
@@ -328,12 +566,15 @@ export default function Meetings({
             key={m.id ?? i}
             className="p-3 rounded bg-sidebar border border-default mb-2 last:mb-0"
           >
+
             <div className="flex items-center justify-between">
+
               <span className="text-[12.5px] font-medium">
                 {m.topic}
               </span>
 
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-3">
+
                 <span className="text-[11px] text-muted">
                   {fmtDate(m.date)}
                   {m.time
@@ -344,23 +585,30 @@ export default function Meetings({
                 {m.id && (
                   <button
                     onClick={() => handleDelete(m.id)}
-                    className="text-[11px] text-red hover:underline"
+                    className="flex items-center gap-1 text-[11px] text-red hover:underline"
                   >
+                    <Trash2 size={12} />
                     Delete
                   </button>
                 )}
+
               </div>
+
             </div>
+
 
             <div className="text-[11px] text-muted mt-0.5">
               {m.project}
             </div>
 
+
             <div className="mt-2 grid grid-cols-2 gap-3 text-[11.5px]">
+
               <div>
                 <span className="text-muted">
                   Decision:{" "}
                 </span>
+
                 {m.decision || "—"}
               </div>
 
@@ -368,12 +616,17 @@ export default function Meetings({
                 <span className="text-muted">
                   Action ({m.owner}):{" "}
                 </span>
+
                 {m.action || "—"}
               </div>
+
             </div>
+
           </div>
         ))}
+
       </Card>
+
     </div>
   );
 }
