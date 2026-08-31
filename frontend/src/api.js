@@ -85,11 +85,7 @@ export function fetchAIChat(question, context) {
   return sendJSON("/ai/chat", "POST", { question, context });
 }
 
-// --- writes ---
-export function updateTaskStatus(id, status) {
-  return sendJSON(`/tasks/${id}/status`, "PUT", { status });
-}
-
+// --- project writes ---
 export function updateProject(id, fields) {
   return sendJSON(`/projects/${id}`, "PUT", fields);
 }
@@ -98,12 +94,56 @@ export function createProject(payload) {
   return sendJSON(`/projects`, "POST", payload);
 }
 
-export function createWeeklySummary(payload) {
-  return sendJSON(`/weekly-summaries`, "POST", payload);
-}
-
 export function deleteProject(id) {
   return del(`/projects/${id}`);
+}
+
+// --- task writes ---
+export function updateTaskStatus(id, status) {
+  return sendJSON(`/tasks/${id}/status`, "PUT", { status });
+}
+
+export function createTask(payload) {
+  return sendJSON(`/tasks`, "POST", payload);
+}
+
+export function updateTask(id, fields) {
+  return sendJSON(`/tasks/${id}`, "PUT", fields);
+}
+
+export function deleteTask(id) {
+  return del(`/tasks/${id}`);
+}
+
+// --- milestone writes ---
+export function createMilestone(payload) {
+  return sendJSON(`/milestones`, "POST", payload);
+}
+
+export function updateMilestone(id, fields) {
+  return sendJSON(`/milestones/${id}`, "PUT", fields);
+}
+
+export function deleteMilestone(id) {
+  return del(`/milestones/${id}`);
+}
+
+// --- risk writes ---
+export function createRisk(payload) {
+  return sendJSON(`/risks`, "POST", payload);
+}
+
+export function updateRisk(id, fields) {
+  return sendJSON(`/risks/${id}`, "PUT", fields);
+}
+
+export function deleteRisk(id) {
+  return del(`/risks/${id}`);
+}
+
+// --- meeting writes ---
+export function createWeeklySummary(payload) {
+  return sendJSON(`/weekly-summaries`, "POST", payload);
 }
 
 export function createMeeting(payload) {
@@ -111,10 +151,5 @@ export function createMeeting(payload) {
 }
 
 export function deleteMeeting(id) {
-  return fetch(`${API_BASE}/meetings/${id}`, {
-    method: "DELETE",
-  }).then((res) => {
-    if (!res.ok) throw new Error(`Delete failed: ${res.status}`);
-    return res.json();
-  });
+  return del(`/meetings/${id}`);
 }
