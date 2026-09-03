@@ -300,7 +300,7 @@ export default function App() {
           )}
           {page === "exec" && (
             <ExecutiveDashboard darkMode={darkMode} projects={projects} risks={risks}
-              golive={golive} vendors={vendors} kpiHistory={kpiHistory} meetings={meetings} />
+              golive={golive} vendors={vendors} kpiHistory={kpiHistory} meetings={meetings} tasks={tasks} currentUser={currentUser} />
           )}
           {page === "team" && (
             <TeamBoard
