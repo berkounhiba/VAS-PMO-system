@@ -1,8 +1,16 @@
+/* ============================================================
+   API LAYER — every fetch call, one place.
+============================================================= */
+
 export const API_BASE = "http://localhost:4000/api";
 
 async function getJSON(path) {
   const res = await fetch(`${API_BASE}${path}`);
-  if (!res.ok) throw new Error(`${path} returned ${res.status}`);
+
+  if (!res.ok) {
+    throw new Error(`${path} returned ${res.status}`);
+  }
+
   return res.json();
 }
 
@@ -10,19 +18,29 @@ async function sendJSON(path, method, body) {
   const res = await fetch(`${API_BASE}${path}`, {
     method,
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
+    body: body !== undefined ? JSON.stringify(body) : undefined,
   });
-  if (!res.ok) throw new Error(`${path} returned ${res.status}`);
+
+  if (!res.ok) {
+    throw new Error(`${path} returned ${res.status}`);
+  }
+
+  // DELETE endpoints can return 204 No Content.
+  if (res.status === 204) {
+    return null;
+  }
+
   return res.json();
 }
 
 async function del(path) {
-  const res = await fetch(`${API_BASE}${path}`, { method: "DELETE" });
-  if (!res.ok) throw new Error(`${path} returned ${res.status}`);
-  return res.json();
+  return sendJSON(path, "DELETE");
 }
 
-// --- reads ---
+// ============================================================
+// READS
+// ============================================================
+
 export function fetchProjects() {
   return getJSON("/projects/full");
 }
@@ -71,53 +89,66 @@ export function fetchWeeklySummaries() {
   return getJSON("/weekly-summaries");
 }
 
+// ============================================================
+// AUTH
+// ============================================================
+
 export async function fetchMe(token) {
   const res = await fetch(`${API_BASE}/me`, {
-    headers: { Authorization: `Bearer ${token}` },
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
   });
 
-  if (!res.ok) throw new Error("Invalid session");
+  if (!res.ok) {
+    throw new Error("Invalid session");
+  }
 
   return res.json();
 }
 
-export function fetchAIChat(question, context) {
-  return sendJSON("/ai/chat", "POST", { question, context });
-}
-
-// --- project writes ---
-export function updateProject(id, fields) {
-  return sendJSON(`/projects/${id}`, "PUT", fields);
-}
+// ============================================================
+// PROJECT CRUD
+// ============================================================
 
 export function createProject(payload) {
-  return sendJSON(`/projects`, "POST", payload);
+  return sendJSON("/projects", "POST", payload);
+}
+
+export function updateProject(id, fields) {
+  return sendJSON(`/projects/${id}`, "PUT", fields);
 }
 
 export function deleteProject(id) {
   return del(`/projects/${id}`);
 }
 
-// --- task writes ---
-export function updateTaskStatus(id, status) {
-  return sendJSON(`/tasks/${id}/status`, "PUT", { status });
-}
+// ============================================================
+// TASK CRUD
+// ============================================================
 
 export function createTask(payload) {
-  return sendJSON(`/tasks`, "POST", payload);
+  return sendJSON("/tasks", "POST", payload);
 }
 
 export function updateTask(id, fields) {
   return sendJSON(`/tasks/${id}`, "PUT", fields);
 }
 
+export function updateTaskStatus(id, status) {
+  return sendJSON(`/tasks/${id}/status`, "PUT", { status });
+}
+
 export function deleteTask(id) {
   return del(`/tasks/${id}`);
 }
 
-// --- milestone writes ---
+// ============================================================
+// MILESTONE CRUD
+// ============================================================
+
 export function createMilestone(payload) {
-  return sendJSON(`/milestones`, "POST", payload);
+  return sendJSON("/milestones", "POST", payload);
 }
 
 export function updateMilestone(id, fields) {
@@ -128,9 +159,12 @@ export function deleteMilestone(id) {
   return del(`/milestones/${id}`);
 }
 
-// --- risk writes ---
+// ============================================================
+// RISK CRUD
+// ============================================================
+
 export function createRisk(payload) {
-  return sendJSON(`/risks`, "POST", payload);
+  return sendJSON("/risks", "POST", payload);
 }
 
 export function updateRisk(id, fields) {
@@ -141,15 +175,113 @@ export function deleteRisk(id) {
   return del(`/risks/${id}`);
 }
 
-// --- meeting writes ---
-export function createWeeklySummary(payload) {
-  return sendJSON(`/weekly-summaries`, "POST", payload);
+// ============================================================
+// DEPENDENCY CRUD
+// ============================================================
+
+export function createDependency(payload) {
+  return sendJSON("/dependencies", "POST", payload);
 }
 
+export function updateDependency(id, fields) {
+  return sendJSON(`/dependencies/${id}`, "PUT", fields);
+}
+
+export function deleteDependency(id) {
+  return del(`/dependencies/${id}`);
+}
+
+// ============================================================
+// SIT / UAT CRUD
+// ============================================================
+
+export function createUatSit(payload) {
+  return sendJSON("/uat_sit", "POST", payload);
+}
+
+export function updateUatSit(id, fields) {
+  return sendJSON(`/uat_sit/${id}`, "PUT", fields);
+}
+
+export function deleteUatSit(id) {
+  return del(`/uat_sit/${id}`);
+}
+
+// ============================================================
+// GO-LIVE CRUD
+// ============================================================
+
+export function createGolive(payload) {
+  return sendJSON("/golive", "POST", payload);
+}
+
+export function updateGolive(id, fields) {
+  return sendJSON(`/golive/${id}`, "PUT", fields);
+}
+
+export function deleteGolive(id) {
+  return del(`/golive/${id}`);
+}
+
+// ============================================================
+// MEETING CRUD
+// ============================================================
+
 export function createMeeting(payload) {
-  return sendJSON(`/meetings`, "POST", payload);
+  return sendJSON("/meetings", "POST", payload);
+}
+
+export function updateMeeting(id, fields) {
+  return sendJSON(`/meetings/${id}`, "PUT", fields);
 }
 
 export function deleteMeeting(id) {
   return del(`/meetings/${id}`);
+}
+
+// ============================================================
+// VENDOR CRUD
+// ============================================================
+
+export function createVendor(payload) {
+  return sendJSON("/vendors", "POST", payload);
+}
+
+export function updateVendor(id, fields) {
+  return sendJSON(`/vendors/${id}`, "PUT", fields);
+}
+
+export function deleteVendor(id) {
+  return del(`/vendors/${id}`);
+}
+
+// ============================================================
+// WEEKLY SUMMARIES
+// ============================================================
+
+export function createWeeklySummary(payload) {
+  return sendJSON("/weekly-summaries", "POST", payload);
+}
+
+// ============================================================
+// AI
+// ============================================================
+
+export function fetchAIChat(question, context) {
+  return sendJSON("/ai/chat", "POST", {
+    question,
+    context,
+  });
+}
+
+export function generateWeeklyReport(context) {
+  return sendJSON("/ai/weekly-report", "POST", {
+    context,
+  });
+}
+
+export function summarizeMeetingMinutes(notes) {
+  return sendJSON("/ai/meeting-minutes", "POST", {
+    notes,
+  });
 }

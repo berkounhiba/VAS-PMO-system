@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import {
   LayoutGrid, User, FolderKanban, ShieldAlert, FlaskConical,
   Building2, CalendarClock, Bot, Settings, Search, Bell,
-  Sun, Moon, LogOut,
+  Sun, Moon, LogOut, ListChecks,
 } from "lucide-react";
 
 import { THEME_CSS } from "./theme";
@@ -21,24 +21,26 @@ import { NoAccess } from "./components/ui";
 
 import Login from "./pages/Login";
 import MyDay from "./pages/MyDay";
+import Tasks from "./pages/Tasks";
 import ExecutiveDashboard from "./pages/ExecutiveDashboard";
 import Projects from "./pages/Projects";
 import TeamBoard from "./pages/TeamBoard";
 import RisksDependencies from "./pages/RisksDependencies";
 import DeliveryControl from "./pages/DeliveryControl";
 import Vendors from "./pages/Vendors";
-import Meetings from "./pages/Meetings";    
+import Meetings from "./pages/Meetings";
 import AIAssistant from "./pages/AIAssistant";
 import Admin from "./pages/Admin";
 
 const NAV = [
   { id: "home", label: "My Day", icon: User },
+  { id: "tasks", label: "Tasks", icon: ListChecks },
   { id: "exec", label: "Executive Dashboard", icon: LayoutGrid },
   { id: "team", label: "Team Board", icon: LayoutGrid },
   { id: "projects", label: "Projects", icon: FolderKanban },
   { id: "risks", label: "Risks & Dependencies", icon: ShieldAlert },
   { id: "delivery", label: "Delivery Control", icon: FlaskConical },
-  { id: "vendors", label: "Vendors Actions", icon: Building2 },
+  { id: "vendors", label: "Vendors", icon: Building2 },
   { id: "meetings", label: "Meetings & Actions", icon: CalendarClock },
   { id: "ai", label: "AI Operations Assistant", icon: Bot },
   { id: "admin", label: "Administration", icon: Settings },
@@ -178,6 +180,18 @@ export default function App() {
     }
   }
 
+  function handleTaskCreated(newRawTask) {
+    setRawTasks((prev) => [newRawTask, ...prev]);
+  }
+
+  function handleTaskUpdated(updatedRawTask) {
+    setRawTasks((prev) => prev.map((t) => (t.id === updatedRawTask.id ? updatedRawTask : t)));
+  }
+
+  function handleTaskDeleted(taskId) {
+    setRawTasks((prev) => prev.filter((t) => t.id !== taskId));
+  }
+
   // --- auth gating: check session -> show login -> then load data ---
   if (!authChecked) {
     return (
@@ -288,6 +302,19 @@ export default function App() {
               vendors={vendors} meetings={meetings}
               onOpenProject={(p) => { setSelectedProject(p); setPage("projects"); }} />
           )}
+          {page === "tasks" && (
+            <Tasks
+              tasks={tasks}
+              projects={projects}
+              users={users}
+              role={role}
+              currentUser={currentUser}
+              onCycleStatus={handleCycleTaskStatus}
+              onTaskCreated={handleTaskCreated}
+              onTaskUpdated={handleTaskUpdated}
+              onTaskDeleted={handleTaskDeleted}
+            />
+          )}
           {page === "exec" && (
             <ExecutiveDashboard darkMode={darkMode} projects={projects} risks={risks}
               golive={golive} vendors={vendors} kpiHistory={kpiHistory} />
@@ -302,43 +329,15 @@ export default function App() {
             />
           )}
           {page === "projects" && (
-            <Projects
-              projects={projects}
-              tasks={tasks}
-              milestones={milestones}
-              risks={risks}
-              dependencies={dependencies}
-              uatSit={uatSit}
-              golive={golive}
-              vendors={vendors}
-              users={users}
-              role={role}
+            <Projects projects={projects} tasks={tasks} milestones={milestones} risks={risks}
+              dependencies={dependencies} uatSit={uatSit} golive={golive} vendors={vendors}
+              users={users} role={role}
               currentUser={currentUser}
-              selected={selectedProject}
-              setSelected={setSelectedProject}
-            />
+              selected={selectedProject} setSelected={setSelectedProject} />
           )}
-
-          {page === "risks" && (
-            <RisksDependencies
-              risks={risks}
-              dependencies={dependencies}
-              currentUser={currentUser}
-            />
-          )}
-
-          {page === "delivery" && (
-            <DeliveryControl uatSit={uatSit} golive={golive} />
-          )}
-
-          {page === "vendors" && (
-            <Vendors
-              role={role}
-              vendors={vendors}
-              currentUser={currentUser}
-            />
-          )}
-
+          {page === "risks" && <RisksDependencies risks={risks} dependencies={dependencies} currentUser={currentUser} />}
+          {page === "delivery" && <DeliveryControl uatSit={uatSit} golive={golive} />}
+          {page === "vendors" && <Vendors role={role} vendors={vendors} currentUser={currentUser} />}
           {page === "meetings" && (
             <Meetings
               meetings={meetings}
@@ -349,28 +348,12 @@ export default function App() {
               onSummaryAdded={handleSummaryAdded}
             />
           )}
-
           {page === "ai" && (
-            <AIAssistant
-              currentUser={currentUser}
-              projects={projects}
-              tasks={tasks}
-              milestones={milestones}
-              risks={risks}
-              resources={resources}
-              dependencies={dependencies}
-              uatSit={uatSit}
-              golive={golive}
-              vendors={vendors}
-              meetings={meetings}
-              kpiHistory={kpiHistory}
-            />
+            <AIAssistant currentUser={currentUser} projects={projects} tasks={tasks} milestones={milestones}
+              risks={risks} resources={resources} dependencies={dependencies} uatSit={uatSit}
+              golive={golive} vendors={vendors} meetings={meetings} kpiHistory={kpiHistory} />
           )}
-
-          {page === "admin" && hasPerm(role, "*") && (
-            <Admin users={users} resources={resources} />
-          )}
-
+          {page === "admin" && hasPerm(role, "*") && <Admin users={users} resources={resources} />}
           {page === "admin" && !hasPerm(role, "*") && <NoAccess />}
         </main>
       </div>

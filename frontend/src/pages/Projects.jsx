@@ -7,6 +7,9 @@ import {
   createMilestone, updateMilestone, deleteMilestone,
   createTask, updateTask, deleteTask,
   createRisk, updateRisk, deleteRisk,
+  createDependency, updateDependency, deleteDependency,
+  createUatSit, updateUatSit, deleteUatSit,
+  createGolive, updateGolive, deleteGolive,
 } from "../api";
 
 function NewProjectForm({ users, onSaved, onCancel }) {
@@ -273,6 +276,7 @@ function TaskForm({ projectId, users, initial, onSaved, onCancel }) {
   const [status, setStatus] = useState(initial?.status || "Not Started");
   const [priority, setPriority] = useState(initial?.priority || "Medium");
   const [dueDate, setDueDate] = useState(initial?.finish?.slice(0, 10) || "");
+  const [progress, setProgress] = useState(initial?.progress ?? 0);
   const [saving, setSaving] = useState(false);
   const isEdit = Boolean(initial?.id);
 
@@ -284,6 +288,7 @@ function TaskForm({ projectId, users, initial, onSaved, onCancel }) {
       if (isEdit) {
         saved = await updateTask(initial.id, {
           title, assignee_id: assigneeId || null, status, priority, due_date: dueDate || null,
+          progress: progress === "" ? 0 : Number(progress),
         });
       } else {
         saved = await createTask({
@@ -317,6 +322,20 @@ function TaskForm({ projectId, users, initial, onSaved, onCancel }) {
         </select>
         <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} className="flex-1 bg-input border border-default rounded px-3 py-2 text-[12.5px]" />
       </div>
+      {isEdit && (
+        <div>
+          <div className="flex justify-between text-[11px] text-muted mb-1">
+            <span>Progress</span>
+            <span>{Math.round(Number(progress) * 100)}%</span>
+          </div>
+          <input
+            type="range" min="0" max="1" step="0.05"
+            value={progress}
+            onChange={(e) => setProgress(e.target.value)}
+            className="w-full"
+          />
+        </div>
+      )}
       <div className="flex gap-2 justify-end">
         <button onClick={onCancel} className="text-[11.5px] px-3 py-1.5 rounded border border-default text-tertiary">Cancel</button>
         <button onClick={handleSave} disabled={saving || !title.trim()} className="text-[11.5px] px-3 py-1.5 rounded bg-accent text-white font-medium disabled:opacity-50">
@@ -397,7 +416,209 @@ function RiskForm({ projectId, users, initial, onSaved, onCancel }) {
   );
 }
 
+/* ============================================================
+   DEPENDENCY form — used for both create and edit
+============================================================= */
+function DependencyForm({ projectId, users, initial, onSaved, onCancel }) {
+  const [dependsOn, setDependsOn] = useState(initial?.dependsOn || "");
+  const [ownerId, setOwnerId] = useState(initial?.ownerId || "");
+  const [status, setStatus] = useState(initial?.status || "Open");
+  const [critical, setCritical] = useState(initial?.critical ? "Yes" : "No");
+  const [targetDate, setTargetDate] = useState(initial?.target?.slice(0, 10) || "");
+  const [saving, setSaving] = useState(false);
+  const isEdit = Boolean(initial?.id);
+
+  async function handleSave() {
+    if (!dependsOn.trim()) return;
+    setSaving(true);
+    try {
+      let saved;
+      if (isEdit) {
+        saved = await updateDependency(initial.id, {
+          depends_on: dependsOn, owner_id: ownerId || null, status, critical, target_date: targetDate || null,
+        });
+      } else {
+        saved = await createDependency({
+          projectId, dependsOn, ownerId: ownerId || null, status, critical, targetDate: targetDate || null,
+        });
+      }
+      const ownerName = users.find((u) => u.id === ownerId)?.name || "—";
+      onSaved(saved, ownerName);
+    } catch (err) {
+      alert("Couldn't save the dependency — check the backend is running.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="p-3 rounded bg-sidebar border border-default space-y-2 mb-2">
+      <input value={dependsOn} onChange={(e) => setDependsOn(e.target.value)} placeholder="Depends on (required)" className="w-full bg-input border border-default rounded px-3 py-2 text-[12.5px] outline-none" />
+      <div className="flex gap-2">
+        <select value={ownerId} onChange={(e) => setOwnerId(e.target.value)} className="flex-1 bg-input border border-default rounded px-3 py-2 text-[12.5px]">
+          <option value="">Owner…</option>
+          {users.map((u) => (<option key={u.id} value={u.id}>{u.name}</option>))}
+        </select>
+        <select value={status} onChange={(e) => setStatus(e.target.value)} className="flex-1 bg-input border border-default rounded px-3 py-2 text-[12.5px]">
+          <option>Open</option><option>In Progress</option><option>Resolved</option><option>Blocked</option>
+        </select>
+      </div>
+      <div className="flex gap-2">
+        <select value={critical} onChange={(e) => setCritical(e.target.value)} className="flex-1 bg-input border border-default rounded px-3 py-2 text-[12.5px]">
+          <option value="No">Not critical</option>
+          <option value="Yes">Critical</option>
+        </select>
+        <input type="date" value={targetDate} onChange={(e) => setTargetDate(e.target.value)} className="flex-1 bg-input border border-default rounded px-3 py-2 text-[12.5px]" />
+      </div>
+      <div className="flex gap-2 justify-end">
+        <button onClick={onCancel} className="text-[11.5px] px-3 py-1.5 rounded border border-default text-tertiary">Cancel</button>
+        <button onClick={handleSave} disabled={saving || !dependsOn.trim()} className="text-[11.5px] px-3 py-1.5 rounded bg-accent text-white font-medium disabled:opacity-50">
+          {saving ? "Saving…" : isEdit ? "Save Changes" : "Add Dependency"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================
+   SIT/UAT form — used for both create and edit
+============================================================= */
+function UatSitForm({ projectId, initial, onSaved, onCancel }) {
+  const [module, setModule] = useState(initial?.module || "");
+  const [sitPct, setSitPct] = useState(initial?.sit ?? 0);
+  const [uatPct, setUatPct] = useState(initial?.uat ?? 0);
+  const [openDefects, setOpenDefects] = useState(initial?.openDefects ?? 0);
+  const [criticalDefects, setCriticalDefects] = useState(initial?.criticalDefects ?? 0);
+  const [ready, setReady] = useState(initial?.ready ? "Yes" : "No");
+  const [saving, setSaving] = useState(false);
+  const isEdit = Boolean(initial?.id);
+
+  async function handleSave() {
+    if (!module.trim()) return;
+    setSaving(true);
+    try {
+      const payload = {
+        module,
+        sit_pct: Number(sitPct), uat_pct: Number(uatPct),
+        open_defects: Number(openDefects), critical_defects: Number(criticalDefects),
+        ready,
+      };
+      let saved;
+      if (isEdit) {
+        saved = await updateUatSit(initial.id, payload);
+      } else {
+        saved = await createUatSit({ projectId, module, sitPct: Number(sitPct), uatPct: Number(uatPct), openDefects: Number(openDefects), criticalDefects: Number(criticalDefects), ready });
+      }
+      onSaved(saved);
+    } catch (err) {
+      alert("Couldn't save the SIT/UAT record — check the backend is running.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="p-3 rounded bg-sidebar border border-default space-y-2 mb-2">
+      <input value={module} onChange={(e) => setModule(e.target.value)} placeholder="Module name (required)" className="w-full bg-input border border-default rounded px-3 py-2 text-[12.5px] outline-none" />
+      <div className="flex gap-2">
+        <div className="flex-1">
+          <div className="text-[11px] text-muted mb-1">SIT %</div>
+          <input type="number" min="0" max="1" step="0.05" value={sitPct} onChange={(e) => setSitPct(e.target.value)} className="w-full bg-input border border-default rounded px-3 py-2 text-[12.5px]" />
+        </div>
+        <div className="flex-1">
+          <div className="text-[11px] text-muted mb-1">UAT %</div>
+          <input type="number" min="0" max="1" step="0.05" value={uatPct} onChange={(e) => setUatPct(e.target.value)} className="w-full bg-input border border-default rounded px-3 py-2 text-[12.5px]" />
+        </div>
+      </div>
+      <div className="flex gap-2">
+        <div className="flex-1">
+          <div className="text-[11px] text-muted mb-1">Open defects</div>
+          <input type="number" min="0" value={openDefects} onChange={(e) => setOpenDefects(e.target.value)} className="w-full bg-input border border-default rounded px-3 py-2 text-[12.5px]" />
+        </div>
+        <div className="flex-1">
+          <div className="text-[11px] text-muted mb-1">Critical defects</div>
+          <input type="number" min="0" value={criticalDefects} onChange={(e) => setCriticalDefects(e.target.value)} className="w-full bg-input border border-default rounded px-3 py-2 text-[12.5px]" />
+        </div>
+      </div>
+      <select value={ready} onChange={(e) => setReady(e.target.value)} className="w-full bg-input border border-default rounded px-3 py-2 text-[12.5px]">
+        <option value="No">Not ready</option>
+        <option value="Yes">Ready</option>
+      </select>
+      <div className="flex gap-2 justify-end">
+        <button onClick={onCancel} className="text-[11.5px] px-3 py-1.5 rounded border border-default text-tertiary">Cancel</button>
+        <button onClick={handleSave} disabled={saving || !module.trim()} className="text-[11.5px] px-3 py-1.5 rounded bg-accent text-white font-medium disabled:opacity-50">
+          {saving ? "Saving…" : isEdit ? "Save Changes" : "Add SIT/UAT Record"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================
+   GO-LIVE form — one row per project; create if missing, edit if exists
+============================================================= */
+function GoliveForm({ projectId, initial, onSaved, onCancel }) {
+  const [rfc, setRfc] = useState(initial?.rfc && initial.rfc !== "—" ? initial.rfc : "");
+  const [mop, setMop] = useState(initial?.mop && initial.mop !== "—" ? initial.mop : "");
+  const [rollback, setRollback] = useState(initial?.rollback && initial.rollback !== "—" ? initial.rollback : "");
+  const [monitoring, setMonitoring] = useState(initial?.monitoring && initial.monitoring !== "—" ? initial.monitoring : "");
+  const [businessSignoff, setBusinessSignoff] = useState(initial?.businessSignoff && initial.businessSignoff !== "—" ? initial.businessSignoff : "");
+  const [techSignoff, setTechSignoff] = useState(initial?.techSignoff && initial.techSignoff !== "—" ? initial.techSignoff : "");
+  const [ready, setReady] = useState(initial?.ready ? "Yes" : "No");
+  const [saving, setSaving] = useState(false);
+  const isEdit = Boolean(initial?.id);
+
+  async function handleSave() {
+    setSaving(true);
+    try {
+      const payload = {
+        rfc: rfc || null, mop: mop || null, rollback: rollback || null, monitoring: monitoring || null,
+        business_signoff: businessSignoff || null, technical_signoff: techSignoff || null, ready,
+      };
+      let saved;
+      if (isEdit) {
+        saved = await updateGolive(initial.id, payload);
+      } else {
+        saved = await createGolive({
+          projectId, rfc: rfc || null, mop: mop || null, rollback: rollback || null, monitoring: monitoring || null,
+          businessSignoff: businessSignoff || null, technicalSignoff: techSignoff || null, ready,
+        });
+      }
+      onSaved(saved);
+    } catch (err) {
+      alert("Couldn't save Go-Live readiness — check the backend is running.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="p-3 rounded bg-sidebar border border-default space-y-2 mb-2">
+      <div className="grid grid-cols-2 gap-2">
+        <input value={rfc} onChange={(e) => setRfc(e.target.value)} placeholder="RFC status" className="bg-input border border-default rounded px-3 py-2 text-[12.5px] outline-none" />
+        <input value={mop} onChange={(e) => setMop(e.target.value)} placeholder="MOP status" className="bg-input border border-default rounded px-3 py-2 text-[12.5px] outline-none" />
+        <input value={rollback} onChange={(e) => setRollback(e.target.value)} placeholder="Rollback plan status" className="bg-input border border-default rounded px-3 py-2 text-[12.5px] outline-none" />
+        <input value={monitoring} onChange={(e) => setMonitoring(e.target.value)} placeholder="Monitoring status" className="bg-input border border-default rounded px-3 py-2 text-[12.5px] outline-none" />
+        <input value={businessSignoff} onChange={(e) => setBusinessSignoff(e.target.value)} placeholder="Business sign-off" className="bg-input border border-default rounded px-3 py-2 text-[12.5px] outline-none" />
+        <input value={techSignoff} onChange={(e) => setTechSignoff(e.target.value)} placeholder="Technical sign-off" className="bg-input border border-default rounded px-3 py-2 text-[12.5px] outline-none" />
+      </div>
+      <select value={ready} onChange={(e) => setReady(e.target.value)} className="w-full bg-input border border-default rounded px-3 py-2 text-[12.5px]">
+        <option value="No">Not ready for Go-Live</option>
+        <option value="Yes">Ready for Go-Live</option>
+      </select>
+      <div className="flex gap-2 justify-end">
+        <button onClick={onCancel} className="text-[11.5px] px-3 py-1.5 rounded border border-default text-tertiary">Cancel</button>
+        <button onClick={handleSave} disabled={saving} className="text-[11.5px] px-3 py-1.5 rounded bg-accent text-white font-medium disabled:opacity-50">
+          {saving ? "Saving…" : isEdit ? "Save Changes" : "Set Up Go-Live"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function ProjectDetail({ project: p, tasks, milestones, risks, dependencies, uatSit, golive, vendors, users, canManage, onBack, onUpdated, onDeleted }) {
+
+
   const [editing, setEditing] = useState(false);
 
   // local add/edit/delete state per section — mirrors the pattern used
@@ -420,6 +641,22 @@ function ProjectDetail({ project: p, tasks, milestones, risks, dependencies, uat
   const [addingRisk, setAddingRisk] = useState(false);
   const [editingRiskId, setEditingRiskId] = useState(null);
 
+  const [extraDeps, setExtraDeps] = useState([]);
+  const [removedDepIds, setRemovedDepIds] = useState([]);
+  const [depOverrides, setDepOverrides] = useState({});
+  const [addingDep, setAddingDep] = useState(false);
+  const [editingDepId, setEditingDepId] = useState(null);
+
+  const [extraUatSit, setExtraUatSit] = useState([]);
+  const [removedUatSitIds, setRemovedUatSitIds] = useState([]);
+  const [uatSitOverrides, setUatSitOverrides] = useState({});
+  const [addingUatSit, setAddingUatSit] = useState(false);
+  const [editingUatSitId, setEditingUatSitId] = useState(null);
+
+  const [goliveOverride, setGoliveOverride] = useState(null); // saved data replaces the prop row once set
+  const [goliveDeleted, setGoliveDeleted] = useState(false);
+  const [editingGolive, setEditingGolive] = useState(false);
+
   const pMilestones = [...milestones.filter((m) => m.project === p.name), ...extraMilestones]
     .filter((m) => !removedMilestoneIds.includes(m.id))
     .map((m) => (milestoneOverrides[m.id] ? { ...m, ...milestoneOverrides[m.id] } : m));
@@ -432,9 +669,15 @@ function ProjectDetail({ project: p, tasks, milestones, risks, dependencies, uat
     .filter((r) => !removedRiskIds.includes(r.id))
     .map((r) => (riskOverrides[r.id] ? { ...r, ...riskOverrides[r.id] } : r));
 
-  const deps = dependencies.filter((d) => d.project === p.name);
-  const uatsit = uatSit.filter((u) => u.project === p.name);
-  const goliveRow = golive.find((g) => g.project === p.name);
+  const deps = [...dependencies.filter((d) => d.project === p.name), ...extraDeps]
+    .filter((d) => !removedDepIds.includes(d.id))
+    .map((d) => (depOverrides[d.id] ? { ...d, ...depOverrides[d.id] } : d));
+
+  const uatsit = [...uatSit.filter((u) => u.project === p.name), ...extraUatSit]
+    .filter((u) => !removedUatSitIds.includes(u.id))
+    .map((u) => (uatSitOverrides[u.id] ? { ...u, ...uatSitOverrides[u.id] } : u));
+
+  const goliveRow = goliveDeleted ? null : (goliveOverride || golive.find((g) => g.project === p.name));
   const vendorActions = vendors.filter((v) => v.project === p.name);
 
   async function handleDelete() {
@@ -478,6 +721,38 @@ function ProjectDetail({ project: p, tasks, milestones, risks, dependencies, uat
       setRemovedRiskIds((prev) => [...prev, id]);
     } catch (err) {
       alert("Couldn't delete the risk — check the backend is running.");
+    }
+  }
+
+  async function handleDeleteDep(id) {
+    if (!confirm("Delete this dependency?")) return;
+    try {
+      await deleteDependency(id);
+      setRemovedDepIds((prev) => [...prev, id]);
+    } catch (err) {
+      alert("Couldn't delete the dependency — check the backend is running.");
+    }
+  }
+
+  async function handleDeleteUatSit(id) {
+    if (!confirm("Delete this SIT/UAT record?")) return;
+    try {
+      await deleteUatSit(id);
+      setRemovedUatSitIds((prev) => [...prev, id]);
+    } catch (err) {
+      alert("Couldn't delete the record — check the backend is running.");
+    }
+  }
+
+  async function handleDeleteGolive() {
+    if (!goliveRow?.id) return;
+    if (!confirm("Delete Go-Live readiness for this project?")) return;
+    try {
+      await deleteGolive(goliveRow.id);
+      setGoliveDeleted(true);
+      setGoliveOverride(null);
+    } catch (err) {
+      alert("Couldn't delete Go-Live readiness — check the backend is running.");
     }
   }
 
@@ -620,7 +895,7 @@ function ProjectDetail({ project: p, tasks, milestones, risks, dependencies, uat
                 onSaved={(saved, ownerName) => {
                   setTaskOverrides((prev) => ({
                     ...prev,
-                    [t.id]: { task: saved.title, owner: ownerName, assigneeId: saved.assignee_id, status: saved.status, priority: saved.priority, finish: saved.due_date },
+                    [t.id]: { task: saved.title, owner: ownerName, assigneeId: saved.assignee_id, status: saved.status, priority: saved.priority, finish: saved.due_date, progress: saved.progress !== null ? Number(saved.progress) : 0 },
                   }));
                   setEditingTaskId(null);
                 }}
@@ -691,25 +966,147 @@ function ProjectDetail({ project: p, tasks, milestones, risks, dependencies, uat
           ))}
         </Card>
 
-        <Card title="Dependencies">
-          {deps.length === 0 ? <Empty /> : deps.map((d, i) => (
-            <RowLine key={i} left={d.dependsOn} right={d.critical ? <Pill color={RAG_COLOR.Red}>Critical</Pill> : <Pill color={RAG_COLOR.Amber}>{d.status}</Pill>} sub={`Owner: ${d.owner} · Target ${fmtDate(d.target)}`} />
+        <Card
+          title="Dependencies"
+          right={canManage && (
+            <button onClick={() => { setAddingDep((s) => !s); setEditingDepId(null); }} className="text-[11px] font-medium text-accent">
+              {addingDep ? "Cancel" : "+ Add"}
+            </button>
+          )}
+        >
+          {addingDep && (
+            <DependencyForm
+              projectId={p.id}
+              users={users}
+              onCancel={() => setAddingDep(false)}
+              onSaved={(saved, ownerName) => {
+                setExtraDeps((prev) => [
+                  { id: saved.id, project: p.name, dependsOn: saved.depends_on, critical: saved.critical === "Yes", ownerId: saved.owner_id, owner: ownerName, status: saved.status, target: saved.target_date },
+                  ...prev,
+                ]);
+                setAddingDep(false);
+              }}
+            />
+          )}
+          {deps.length === 0 && !addingDep ? <Empty /> : deps.map((d) => (
+            editingDepId === d.id ? (
+              <DependencyForm
+                key={d.id}
+                projectId={p.id}
+                users={users}
+                initial={d}
+                onCancel={() => setEditingDepId(null)}
+                onSaved={(saved, ownerName) => {
+                  setDepOverrides((prev) => ({
+                    ...prev,
+                    [d.id]: { dependsOn: saved.depends_on, critical: saved.critical === "Yes", ownerId: saved.owner_id, owner: ownerName, status: saved.status, target: saved.target_date },
+                  }));
+                  setEditingDepId(null);
+                }}
+              />
+            ) : (
+              <div key={d.id} className="group flex items-center justify-between gap-2">
+                <RowLine left={d.dependsOn} right={d.critical ? <Pill color={RAG_COLOR.Red}>Critical</Pill> : <Pill color={RAG_COLOR.Amber}>{d.status}</Pill>} sub={`Owner: ${d.owner} · Target ${fmtDate(d.target)}`} />
+                {canManage && (
+                  <div className="flex gap-2 shrink-0">
+                    <button onClick={() => setEditingDepId(d.id)} className="text-[11px] text-muted hover:underline">Edit</button>
+                    <button onClick={() => handleDeleteDep(d.id)} className="text-[11px] text-red hover:underline">Delete</button>
+                  </div>
+                )}
+              </div>
+            )
           ))}
         </Card>
-        <Card title="SIT / UAT">
-          {uatsit.length === 0 ? <Empty /> : uatsit.map((u, i) => (
-            <div key={i} className="p-2.5 rounded bg-sidebar border border-default mb-2 last:mb-0">
-              <div className="text-[12.5px] font-medium mb-1.5">{u.module}</div>
-              <div className="flex gap-4 text-[11px] text-tertiary"><span>SIT {pct(u.sit)}</span><span>UAT {pct(u.uat)}</span><span className="text-red">{u.criticalDefects} critical defects</span></div>
-            </div>
+
+        <Card
+          title="SIT / UAT"
+          right={canManage && (
+            <button onClick={() => { setAddingUatSit((s) => !s); setEditingUatSitId(null); }} className="text-[11px] font-medium text-accent">
+              {addingUatSit ? "Cancel" : "+ Add"}
+            </button>
+          )}
+        >
+          {addingUatSit && (
+            <UatSitForm
+              projectId={p.id}
+              onCancel={() => setAddingUatSit(false)}
+              onSaved={(saved) => {
+                setExtraUatSit((prev) => [
+                  { id: saved.id, project: p.name, module: saved.module, sit: Number(saved.sit_pct), uat: Number(saved.uat_pct), openDefects: saved.open_defects, criticalDefects: saved.critical_defects, ready: saved.ready === "Yes" },
+                  ...prev,
+                ]);
+                setAddingUatSit(false);
+              }}
+            />
+          )}
+          {uatsit.length === 0 && !addingUatSit ? <Empty /> : uatsit.map((u) => (
+            editingUatSitId === u.id ? (
+              <UatSitForm
+                key={u.id}
+                projectId={p.id}
+                initial={u}
+                onCancel={() => setEditingUatSitId(null)}
+                onSaved={(saved) => {
+                  setUatSitOverrides((prev) => ({
+                    ...prev,
+                    [u.id]: { module: saved.module, sit: Number(saved.sit_pct), uat: Number(saved.uat_pct), openDefects: saved.open_defects, criticalDefects: saved.critical_defects, ready: saved.ready === "Yes" },
+                  }));
+                  setEditingUatSitId(null);
+                }}
+              />
+            ) : (
+              <div key={u.id} className="group p-2.5 rounded bg-sidebar border border-default mb-2 last:mb-0">
+                <div className="flex items-center justify-between">
+                  <div className="text-[12.5px] font-medium mb-1.5">{u.module}</div>
+                  {canManage && (
+                    <div className="flex gap-2 shrink-0">
+                      <button onClick={() => setEditingUatSitId(u.id)} className="text-[11px] text-muted hover:underline">Edit</button>
+                      <button onClick={() => handleDeleteUatSit(u.id)} className="text-[11px] text-red hover:underline">Delete</button>
+                    </div>
+                  )}
+                </div>
+                <div className="flex gap-4 text-[11px] text-tertiary"><span>SIT {pct(u.sit)}</span><span>UAT {pct(u.uat)}</span><span className="text-red">{u.criticalDefects} critical defects</span></div>
+              </div>
+            )
           ))}
         </Card>
-        <Card title="Go-Live Readiness">
-          {!goliveRow ? <Empty /> : (
-            <div className="grid grid-cols-2 gap-2 text-[12px]">
-              {["rfc", "mop", "rollback", "monitoring", "businessSignoff", "techSignoff"].map((k) => (
-                <div key={k} className="flex justify-between p-2 rounded bg-sidebar border border-default"><span className="text-tertiary capitalize">{k.replace(/([A-Z])/g, " $1")}</span><span>{goliveRow[k]}</span></div>
-              ))}
+
+        <Card
+          title="Go-Live Readiness"
+          right={canManage && !editingGolive && (
+            <button onClick={() => setEditingGolive(true)} className="text-[11px] font-medium text-accent">
+              {goliveRow ? "Edit" : "+ Set Up"}
+            </button>
+          )}
+        >
+          {editingGolive ? (
+            <GoliveForm
+              projectId={p.id}
+              initial={goliveRow}
+              onCancel={() => setEditingGolive(false)}
+              onSaved={(saved) => {
+                setGoliveOverride({
+                  id: saved.id, project: p.name, rfc: saved.rfc ?? "—", mop: saved.mop ?? "—",
+                  rollback: saved.rollback ?? "—", monitoring: saved.monitoring ?? "—",
+                  businessSignoff: saved.business_signoff ?? "—", techSignoff: saved.technical_signoff ?? "—",
+                  ready: saved.ready === "Yes",
+                });
+                setGoliveDeleted(false);
+                setEditingGolive(false);
+              }}
+            />
+          ) : !goliveRow ? <Empty /> : (
+            <div>
+              <div className="grid grid-cols-2 gap-2 text-[12px]">
+                {["rfc", "mop", "rollback", "monitoring", "businessSignoff", "techSignoff"].map((k) => (
+                  <div key={k} className="flex justify-between p-2 rounded bg-sidebar border border-default"><span className="text-tertiary capitalize">{k.replace(/([A-Z])/g, " $1")}</span><span>{goliveRow[k]}</span></div>
+                ))}
+              </div>
+              {canManage && (
+                <div className="flex justify-end mt-2">
+                  <button onClick={handleDeleteGolive} className="text-[11px] text-red hover:underline">Delete</button>
+                </div>
+              )}
             </div>
           )}
         </Card>

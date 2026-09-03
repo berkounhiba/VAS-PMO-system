@@ -24,6 +24,7 @@ export function normalizeProject(p, { userNameById } = {}) {
     domain: p.domain ?? "—",
     business: p.business ?? "—",
     lead,
+    leadId: p.leadId ?? p.lead_id ?? null,
     // NOTE: /projects/full doesn't currently SELECT project_type at
     // all, so track always falls back to 'it' until that's added to
     // the query (one line: p.project_type AS "projectType").
@@ -47,14 +48,17 @@ export function normalizeProject(p, { userNameById } = {}) {
 // Same dual-shape handling as normalizeProject — /tasks/full already
 // JOINs project/owner names directly (t.project, t.owner), the old
 // raw /tasks endpoint only has IDs (t.project_id, t.assignee_id).
+// projectId may be null — a task doesn't have to belong to a project.
 export function normalizeTask(t, { projectNameById, userNameById } = {}) {
-  const projectId = t.project_id ?? t.projectId;
-  const assigneeId = t.assignee_id ?? t.assigneeId;
+  const projectId = t.project_id ?? t.projectId ?? null;
+  const assigneeId = t.assignee_id ?? t.assigneeId ?? null;
   return {
     id: t.id,
-    project: t.project ?? (projectNameById && projectNameById.get(projectId)) ?? "Unknown project",
+    projectId,
+    project: t.project ?? (projectId ? (projectNameById && projectNameById.get(projectId)) ?? "Unknown project" : "No project"),
     task: t.task ?? t.title ?? "Untitled task",
-    owner: t.owner ?? (userNameById && userNameById.get(assigneeId)) ?? "Unassigned",
+    assigneeId,
+    owner: t.owner ?? (assigneeId ? (userNameById && userNameById.get(assigneeId)) ?? "Unassigned" : "Unassigned"),
     priority: t.priority ?? "Medium",
     status: t.status ?? "Not Started",
     start: t.start ?? t.start_date ?? t.startDate ?? null,
@@ -67,43 +71,56 @@ export function normalizeTask(t, { projectNameById, userNameById } = {}) {
 
 export function normalizeMilestone(m, { projectNameById, userNameById }) {
   return {
-    project: projectNameById.get(m.project_id) ?? "Unknown project",
-    name: m.title ?? "Untitled milestone",
-    owner: userNameById.get(m.owner_id) ?? "Unassigned",
-    planned: m.due_date ?? null,
-    forecast: m.forecast_date ?? null,
+    id: m.id,
+    projectId: m.project_id ?? m.projectId ?? null,
+    project: projectNameById.get(m.project_id ?? m.projectId) ?? "Unknown project",
+    name: m.title ?? m.name ?? "Untitled milestone",
+    ownerId: m.owner_id ?? m.ownerId ?? null,
+    owner: userNameById.get(m.owner_id ?? m.ownerId) ?? "Unassigned",
+    planned: m.due_date ?? m.planned ?? null,
+    forecast: m.forecast_date ?? m.forecast ?? null,
     status: m.status ?? "Not Started",
   };
 }
 
 export function normalizeRisk(r, { projectNameById, userNameById } = {}) {
+  const projectId = r.project_id ?? r.projectId ?? null;
+  const ownerId = r.owner_id ?? r.ownerId ?? null;
   return {
     id: r.id,
-    project: r.project ?? (projectNameById && projectNameById.get(r.project_id)) ?? "Unknown project",
+    projectId,
+    project: r.project ?? (projectNameById && projectNameById.get(projectId)) ?? "Unknown project",
     risk: r.risk ?? r.description ?? "Untitled risk",
+    severity: r.severity ?? "Medium",
     probability: r.probability ?? "—",
     impact: r.impact ?? "—",
     score: r.score ?? 0,
     mitigation: r.mitigation ?? "—",
-    owner: r.owner ?? (userNameById && userNameById.get(r.owner_id)) ?? "Unassigned",
+    ownerId,
+    owner: r.owner ?? (userNameById && userNameById.get(ownerId)) ?? "Unassigned",
     status: r.status ?? "Open",
   };
 }
 
 export function normalizeDependency(d, { projectNameById, userNameById }) {
   return {
-    project: projectNameById.get(d.project_id) ?? "Unknown project",
-    dependsOn: d.depends_on ?? "—",
+    id: d.id,
+    projectId: d.project_id ?? d.projectId ?? null,
+    project: projectNameById.get(d.project_id ?? d.projectId) ?? "Unknown project",
+    dependsOn: d.depends_on ?? d.dependsOn ?? "—",
     critical: d.critical === "Yes",
-    owner: userNameById.get(d.owner_id) ?? "Unassigned",
+    ownerId: d.owner_id ?? d.ownerId ?? null,
+    owner: userNameById.get(d.owner_id ?? d.ownerId) ?? "Unassigned",
     status: d.status ?? "—",
-    target: d.target_date ?? null,
+    target: d.target_date ?? d.target ?? null,
   };
 }
 
 export function normalizeUatSit(u, { projectNameById }) {
   return {
-    project: projectNameById.get(u.project_id) ?? "Unknown project",
+    id: u.id,
+    projectId: u.project_id ?? u.projectId ?? null,
+    project: projectNameById.get(u.project_id ?? u.projectId) ?? "Unknown project",
     module: u.module ?? "—",
     sit: u.sit_pct !== null && u.sit_pct !== undefined ? Number(u.sit_pct) : 0,
     uat: u.uat_pct !== null && u.uat_pct !== undefined ? Number(u.uat_pct) : 0,
@@ -115,7 +132,9 @@ export function normalizeUatSit(u, { projectNameById }) {
 
 export function normalizeGolive(g, { projectNameById }) {
   return {
-    project: projectNameById.get(g.project_id) ?? "Unknown project",
+    id: g.id,
+    projectId: g.project_id ?? g.projectId ?? null,
+    project: projectNameById.get(g.project_id ?? g.projectId) ?? "Unknown project",
     rfc: g.rfc ?? "—",
     mop: g.mop ?? "—",
     rollback: g.rollback ?? "—",
