@@ -1,9 +1,5 @@
 export const RAG_COLOR = { Red: "#FF4D6D", Amber: "#FFB020", Green: "#2ECC71", Unknown: "#9296C9" };
 
-/* Every color used anywhere in the app is defined ONCE here as a
-   CSS variable, then consumed via plain utility classes below
-   (bg-app, text-primary, border-default, ...). To re-theme the
-   whole app, edit only this block — nothing else needs to change. */
 export const THEME_CSS = `
   .theme-dark {
     --bg-app: #1E2150;
@@ -105,4 +101,19 @@ export const THEME_CSS = `
   .hover-text-primary:hover { color: var(--text-primary); }
 
   .placeholder-dim::placeholder { color: var(--text-dim); }
+
+  /* ========== PRINT / PDF EXPORT ========== */
+  @media print {
+    aside, header, button, .no-print, nav { display: none !important; }
+    main { padding: 0 !important; overflow: visible !important; }
+    .bg-app { background: white !important; color: black !important; }
+    .bg-panel { background: white !important; border: 1px solid #ccc !important; box-shadow: none !important; }
+    .bg-sidebar { background: white !important; border: 1px solid #ccc !important; }
+    .bg-input { background: #f5f5f5 !important; }
+    .text-primary { color: black !important; }
+    .text-secondary { color: #333 !important; }
+    .text-muted { color: #666 !important; }
+    .text-accent { color: #333 !important; }
+    .border-default { border-color: #ccc !important; }
+  }
 `;
