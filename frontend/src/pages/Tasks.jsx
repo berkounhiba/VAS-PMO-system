@@ -6,6 +6,15 @@ import { createTask, updateTask, deleteTask } from "../api";
 
 const STATUS_CYCLE = ["Not Started", "In Progress", "Blocked", "Done"];
 
+function Field({ label, children }) {
+  return (
+    <div className="flex-1">
+      <div className="text-[11px] text-muted mb-1">{label}</div>
+      {children}
+    </div>
+  );
+}
+
 function NewTaskForm({ projects, users, onSaved, onCancel }) {
   const [title, setTitle] = useState("");
   const [projectId, setProjectId] = useState("");
@@ -41,37 +50,45 @@ function NewTaskForm({ projects, users, onSaved, onCancel }) {
 
   return (
     <div className="p-4 rounded bg-sidebar border border-default space-y-2 mb-3">
-      <input
-        value={title}
-        onChange={(e) => setTitle(e.target.value)}
-        placeholder="Task title (required)"
-        className="w-full bg-input border border-default rounded px-3 py-2 text-[12.5px] outline-none"
-      />
+      <Field label="Task title">
+        <input
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          placeholder="Task title (required)"
+          className="w-full bg-input border border-default rounded px-3 py-2 text-[12.5px] outline-none"
+        />
+      </Field>
       <div className="flex gap-2">
-        <select value={projectId} onChange={(e) => setProjectId(e.target.value)} className="flex-1 bg-input border border-default rounded px-3 py-2 text-[12.5px]">
-          <option value="">Project (optional)…</option>
-          {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-        </select>
-        <select value={assigneeId} onChange={(e) => setAssigneeId(e.target.value)} className="flex-1 bg-input border border-default rounded px-3 py-2 text-[12.5px]">
-          <option value="">Assign to… (optional)</option>
-          {users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
-        </select>
+        <Field label="Project">
+          <select value={projectId} onChange={(e) => setProjectId(e.target.value)} className="w-full bg-input border border-default rounded px-3 py-2 text-[12.5px]">
+            <option value="">No project</option>
+            {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+        </Field>
+        <Field label="Assignee">
+          <select value={assigneeId} onChange={(e) => setAssigneeId(e.target.value)} className="w-full bg-input border border-default rounded px-3 py-2 text-[12.5px]">
+            <option value="">Unassigned</option>
+            {users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+          </select>
+        </Field>
       </div>
       <div className="flex gap-2">
-        <select value={priority} onChange={(e) => setPriority(e.target.value)} className="flex-1 bg-input border border-default rounded px-3 py-2 text-[12.5px]">
-          <option>Low</option><option>Medium</option><option>High</option><option>Critical</option>
-        </select>
-        <input value={dependency} onChange={(e) => setDependency(e.target.value)} placeholder="Dependency note (optional)" className="flex-1 bg-input border border-default rounded px-3 py-2 text-[12.5px] outline-none" />
+        <Field label="Priority">
+          <select value={priority} onChange={(e) => setPriority(e.target.value)} className="w-full bg-input border border-default rounded px-3 py-2 text-[12.5px]">
+            <option>Low</option><option>Medium</option><option>High</option><option>Critical</option>
+          </select>
+        </Field>
+        <Field label="Dependency note">
+          <input value={dependency} onChange={(e) => setDependency(e.target.value)} placeholder="Optional" className="w-full bg-input border border-default rounded px-3 py-2 text-[12.5px] outline-none" />
+        </Field>
       </div>
       <div className="flex gap-2">
-        <div className="flex-1">
-          <div className="text-[11px] text-muted mb-1">Start date</div>
+        <Field label="Start date">
           <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="w-full bg-input border border-default rounded px-3 py-2 text-[12.5px]" />
-        </div>
-        <div className="flex-1">
-          <div className="text-[11px] text-muted mb-1">Due date</div>
+        </Field>
+        <Field label="Due date">
           <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} className="w-full bg-input border border-default rounded px-3 py-2 text-[12.5px]" />
-        </div>
+        </Field>
       </div>
       <div className="flex gap-2 justify-end">
         <button onClick={onCancel} className="text-[12px] px-3 py-1.5 rounded border border-default text-tertiary">Cancel</button>
@@ -95,6 +112,25 @@ function EditTaskForm({ task, projects, users, onSaved, onCancel }) {
   const [dependency, setDependency] = useState(task.dependency || "");
   const [comments, setComments] = useState(task.comments || "");
   const [saving, setSaving] = useState(false);
+
+  function handleStatusChange(newStatus) {
+    setStatus(newStatus);
+    // Done always means 100%, Not Started always means 0%.
+    // In Progress/Blocked leave whatever progress is already set.
+    if (newStatus === "Done") setProgress(1);
+    else if (newStatus === "Not Started") setProgress(0);
+  }
+
+  function handleProgressChange(newProgress) {
+    setProgress(newProgress);
+    const p = Number(newProgress);
+    // Mirror of the rule above, driven from the slider instead of
+    // the dropdown. Blocked is never touched automatically.
+    if (status === "Blocked") return;
+    if (p >= 1) setStatus("Done");
+    else if (p <= 0) setStatus("Not Started");
+    else if (status === "Done" || status === "Not Started") setStatus("In Progress");
+  }
 
   async function handleSave() {
     if (!title.trim()) return;
@@ -120,44 +156,69 @@ function EditTaskForm({ task, projects, users, onSaved, onCancel }) {
     }
   }
 
+  const progressLocked = status === "Done" || status === "Not Started";
+
   return (
     <div className="p-4 rounded bg-sidebar border border-default space-y-2 mb-3">
-      <input
-        value={title}
-        onChange={(e) => setTitle(e.target.value)}
-        placeholder="Task title (required)"
-        className="w-full bg-input border border-default rounded px-3 py-2 text-[12.5px] outline-none"
-      />
+      <Field label="Task title">
+        <input
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          placeholder="Task title (required)"
+          className="w-full bg-input border border-default rounded px-3 py-2 text-[12.5px] outline-none"
+        />
+      </Field>
       <div className="flex gap-2">
-        <select value={projectId} onChange={(e) => setProjectId(e.target.value)} className="flex-1 bg-input border border-default rounded px-3 py-2 text-[12.5px]">
-          <option value="">Project (optional)…</option>
-          {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-        </select>
-        <select value={assigneeId} onChange={(e) => setAssigneeId(e.target.value)} className="flex-1 bg-input border border-default rounded px-3 py-2 text-[12.5px]">
-          <option value="">Assign to… (optional)</option>
-          {users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
-        </select>
+        <Field label="Project">
+          <select value={projectId} onChange={(e) => setProjectId(e.target.value)} className="w-full bg-input border border-default rounded px-3 py-2 text-[12.5px]">
+            <option value="">No project</option>
+            {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+        </Field>
+        <Field label="Assignee">
+          <select value={assigneeId} onChange={(e) => setAssigneeId(e.target.value)} className="w-full bg-input border border-default rounded px-3 py-2 text-[12.5px]">
+            <option value="">Unassigned</option>
+            {users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+          </select>
+        </Field>
       </div>
       <div className="flex gap-2">
-        <select value={status} onChange={(e) => setStatus(e.target.value)} className="flex-1 bg-input border border-default rounded px-3 py-2 text-[12.5px]">
-          <option>Not Started</option><option>In Progress</option><option>Blocked</option><option>Done</option>
-        </select>
-        <select value={priority} onChange={(e) => setPriority(e.target.value)} className="flex-1 bg-input border border-default rounded px-3 py-2 text-[12.5px]">
-          <option>Low</option><option>Medium</option><option>High</option><option>Critical</option>
-        </select>
-        <input type="number" min="0" max="1" step="0.05" value={progress} onChange={(e) => setProgress(e.target.value)} placeholder="Progress (0-1)" className="w-32 bg-input border border-default rounded px-3 py-2 text-[12.5px]" />
+        <Field label="Status">
+          <select value={status} onChange={(e) => handleStatusChange(e.target.value)} className="w-full bg-input border border-default rounded px-3 py-2 text-[12.5px]">
+            <option>Not Started</option><option>In Progress</option><option>Blocked</option><option>Done</option>
+          </select>
+        </Field>
+        <Field label="Priority">
+          <select value={priority} onChange={(e) => setPriority(e.target.value)} className="w-full bg-input border border-default rounded px-3 py-2 text-[12.5px]">
+            <option>Low</option><option>Medium</option><option>High</option><option>Critical</option>
+          </select>
+        </Field>
       </div>
-      <input value={dependency} onChange={(e) => setDependency(e.target.value)} placeholder="Dependency note (optional)" className="w-full bg-input border border-default rounded px-3 py-2 text-[12.5px] outline-none" />
-      <input value={comments} onChange={(e) => setComments(e.target.value)} placeholder="Comments (optional)" className="w-full bg-input border border-default rounded px-3 py-2 text-[12.5px] outline-none" />
+      <Field label={`Progress ${progressLocked ? "(locked by status)" : ""}`}>
+        <div className="flex items-center gap-3">
+          <input
+            type="range" min="0" max="1" step="0.05"
+            value={progress}
+            disabled={progressLocked}
+            onChange={(e) => handleProgressChange(e.target.value)}
+            className="flex-1 disabled:opacity-40"
+          />
+          <span className="text-[11px] text-tertiary w-10 text-right">{Math.round(Number(progress) * 100)}%</span>
+        </div>
+      </Field>
+      <Field label="Dependency note">
+        <input value={dependency} onChange={(e) => setDependency(e.target.value)} placeholder="Optional" className="w-full bg-input border border-default rounded px-3 py-2 text-[12.5px] outline-none" />
+      </Field>
+      <Field label="Comments">
+        <input value={comments} onChange={(e) => setComments(e.target.value)} placeholder="Optional" className="w-full bg-input border border-default rounded px-3 py-2 text-[12.5px] outline-none" />
+      </Field>
       <div className="flex gap-2">
-        <div className="flex-1">
-          <div className="text-[11px] text-muted mb-1">Start date</div>
+        <Field label="Start date">
           <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="w-full bg-input border border-default rounded px-3 py-2 text-[12.5px]" />
-        </div>
-        <div className="flex-1">
-          <div className="text-[11px] text-muted mb-1">Due date</div>
+        </Field>
+        <Field label="Due date">
           <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} className="w-full bg-input border border-default rounded px-3 py-2 text-[12.5px]" />
-        </div>
+        </Field>
       </div>
       <div className="flex gap-2 justify-end">
         <button onClick={onCancel} className="text-[12px] px-3 py-1.5 rounded border border-default text-tertiary">Cancel</button>

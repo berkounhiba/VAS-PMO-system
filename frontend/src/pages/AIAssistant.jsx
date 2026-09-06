@@ -31,6 +31,12 @@ export default function AIAssistant({ currentUser, projects, tasks, milestones, 
       // Build a scoped context (cleaner than dumping raw DB rows)
       const context = {
         currentUser,
+        // Send prior turns so the AI has conversational memory —
+        // capped to the last 10 to keep the payload small.
+        history: messages.slice(-10).map((m) => ({
+          role: m.role === "user" ? "user" : "assistant",
+          content: m.text,
+        })),
         projects: projects.map((p) => ({
           name: p.name,
           status: p.status,

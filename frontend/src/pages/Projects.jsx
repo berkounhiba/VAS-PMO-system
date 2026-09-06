@@ -280,6 +280,15 @@ function TaskForm({ projectId, users, initial, onSaved, onCancel }) {
   const [saving, setSaving] = useState(false);
   const isEdit = Boolean(initial?.id);
 
+  function handleStatusChange(newStatus) {
+    setStatus(newStatus);
+    // Same rule enforced on the backend: Done always means 100%,
+    // Not Started always means 0%. In Progress/Blocked leave
+    // whatever progress value is already set.
+    if (newStatus === "Done") setProgress(1);
+    else if (newStatus === "Not Started") setProgress(0);
+  }
+
   async function handleSave() {
     if (!title.trim()) return;
     setSaving(true);
@@ -312,7 +321,7 @@ function TaskForm({ projectId, users, initial, onSaved, onCancel }) {
           <option value="">Assignee…</option>
           {users.map((u) => (<option key={u.id} value={u.id}>{u.name}</option>))}
         </select>
-        <select value={status} onChange={(e) => setStatus(e.target.value)} className="flex-1 bg-input border border-default rounded px-3 py-2 text-[12.5px]">
+        <select value={status} onChange={(e) => handleStatusChange(e.target.value)} className="flex-1 bg-input border border-default rounded px-3 py-2 text-[12.5px]">
           <option>Not Started</option><option>In Progress</option><option>Blocked</option><option>Done</option>
         </select>
       </div>
@@ -325,14 +334,15 @@ function TaskForm({ projectId, users, initial, onSaved, onCancel }) {
       {isEdit && (
         <div>
           <div className="flex justify-between text-[11px] text-muted mb-1">
-            <span>Progress</span>
+            <span>Progress {status === "Done" || status === "Not Started" ? "(locked by status)" : ""}</span>
             <span>{Math.round(Number(progress) * 100)}%</span>
           </div>
           <input
             type="range" min="0" max="1" step="0.05"
             value={progress}
+            disabled={status === "Done" || status === "Not Started"}
             onChange={(e) => setProgress(e.target.value)}
-            className="w-full"
+            className="w-full disabled:opacity-40"
           />
         </div>
       )}

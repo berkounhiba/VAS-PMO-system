@@ -1,49 +1,397 @@
 import { pool } from "../config/db.js";
+import pg from "pg";
+
+// Separate connection using a database role that can ONLY SELECT —
+// enforced by Postgres itself, not just application code. This is
+// what makes the free-form SQL tool below safe to expose to the AI.
+const readonlyPool = process.env.AI_READONLY_DATABASE_URL
+  ? new pg.Pool({
+      connectionString: process.env.AI_READONLY_DATABASE_URL,
+      statement_timeout: 5000, // kill any query that runs over 5s
+    })
+  : null;
+
+const KNOWN_TABLES = [
+  "projects", "tasks", "users", "milestones", "risks", "dependencies",
+  "uat_sit", "golive", "vendors", "meetings", "weekly_meeting_summaries",
+  "kpis", "business_project_details", "it_project_details",
+];
+
+function isSafeReadOnlySql(sql) {
+  const trimmed = sql.trim().replace(/;\s*$/, "");
+  if (!/^\s*(SELECT|WITH)\b/i.test(trimmed)) return "Query must start with SELECT or WITH.";
+  if (/\b(INSERT|UPDATE|DELETE|DROP|ALTER|TRUNCATE|GRANT|REVOKE|CREATE|EXEC|CALL|COPY|VACUUM|SET|RESET|password_hash)\b/i.test(trimmed)) {
+    return "Query contains a disallowed keyword or column.";
+  }
+  if (trimmed.includes(";")) return "Only a single statement is allowed.";
+  return null;
+}
+
+async function queryDatabase({ sql } = {}) {
+  if (!readonlyPool) {
+    return { error: "AI_READONLY_DATABASE_URL is not configured on the backend." };
+  }
+  if (!sql) return { error: "sql is required" };
+
+  const problem = isSafeReadOnlySql(sql);
+  if (problem) return { error: `Rejected: ${problem}` };
+
+  // Auto-cap unbounded queries so a broad question can't return huge rowsets.
+  const capped = /\bLIMIT\b/i.test(sql) ? sql : `${sql.trim().replace(/;\s*$/, "")} LIMIT 200`;
+
+  try {
+    const result = await readonlyPool.query(capped);
+    return { rows: result.rows };
+  } catch (err) {
+    return { error: `Query failed: ${err.message}` };
+  }
+}
+
+const SCHEMA_DESCRIPTION = `
+Tables and columns you can query (schema is fixed, don't guess other names):
+- projects(id, name, domain, business, lead_id, priority, status, phase, progress, planned_start, delay_days, health, blocker, next_action, escalation, remarks, planned_go_live, forecast_go_live, project_type)
+- tasks(id, title, project_id, assignee_id, status, due_date, created_at, priority, start_date, progress, dependency, comments)
+- users(id, name, role, skills, capacity_pct, allocated_pct, is_manager, access_level)
+- milestones(id, project_id, title, due_date, status, owner_id, forecast_date)
+- risks(id, project_id, description, severity, status, probability, impact, score, mitigation, owner_id)
+- dependencies(id, project_id, depends_on, critical, owner_id, status, target_date)
+- uat_sit(id, project_id, module, sit_pct, uat_pct, open_defects, critical_defects, ready)
+- golive(id, project_id, rfc, mop, rollback, monitoring, business_signoff, technical_signoff, ready)
+- vendors(id, vendor_name, project_id, pending_action, owner_id, sent_date, due_date, days_open, status)
+- meetings(id, meeting_date, project_id, topic, decision, action, owner_id, due_date, status, meeting_time)
+- weekly_meeting_summaries(id, meeting_date, summary, author_id, created_at)
+- kpis(id, month, otd_pct, avg_delay, ftr_pct, uat_pass_pct, vendor_sla_pct)
+- business_project_details(project_id, business_requester, phase)
+- it_project_details(project_id, vendor, cycle_weeks, phase)
+All foreign keys named *_id reference the matching table's id (e.g. assignee_id -> users.id, project_id -> projects.id).
+The users table's password_hash column is never accessible — don't attempt to select it.
+`.trim();
+
+
 
 /* ============================================================
-   PROMPT BUILDER — sends only scoped data, never the full raw DB
+   WHITELISTED DB TOOLS
+   The AI can only ever call these — never raw SQL. Each one is a
+   safe, read-only, parameterized query. Add more here as needed.
 ============================================================= */
-function buildPrompt(question, context) {
-  const { projects, risks, tasks, vendors, currentUser } = context;
 
-  const delayedProjects = projects
-    .filter((p) => p.delayDays > 0)
-    .map((p) => `${p.name}: ${p.delayDays}d late, blocker: ${p.blocker || "none"}`);
+async function getUserTaskCompletion({ days = 30 } = {}) {
+  // NOTE: tasks has no completed_at column, so this is approximated
+  // via due_date on Done tasks. Add a completed_at timestamp (set
+  // when status -> 'Done') for exact accuracy.
+  // LEFT JOIN from users so people with ZERO completed tasks still
+  // show up — needed for "who did the least" questions.
+  const result = await pool.query(
+    `SELECT u.name,
+            COUNT(t.id) FILTER (
+              WHERE t.status = 'Done' AND t.due_date >= CURRENT_DATE - ($1 || ' days')::interval
+            ) AS completed_tasks
+     FROM users u
+     LEFT JOIN tasks t ON t.assignee_id = u.id
+     GROUP BY u.id, u.name
+     ORDER BY completed_tasks DESC`,
+    [days]
+  );
+  return result.rows;
+}
 
-  const openRisks = risks
-    .filter((r) => r.status === "Open" || r.status === "Monitoring")
-    .map((r) => `${r.project} — ${r.risk} (score ${r.score})`);
+async function getDelayAnalysis({ projectNames } = {}) {
+  // Pulls together everything that could explain why a project is
+  // late: its own blocker field, open risks, overdue tasks, and
+  // critical/blocked dependencies — in one call, so the model can
+  // reason about root causes instead of guessing.
+  const nameFilter = Array.isArray(projectNames) && projectNames.length > 0 ? projectNames : null;
 
-  const overdueVendors = vendors
-    .filter((v) => v.status === "Overdue")
-    .map((v) => `${v.vendor}: ${v.action} (${v.daysOpen}d open)`);
+  const projectsResult = await pool.query(
+    `SELECT id, name, status, delay_days, blocker, next_action, health
+     FROM projects
+     WHERE ($1::text[] IS NULL OR name = ANY($1))
+       AND (delay_days > 0 OR status IN ('Delayed', 'Blocked') OR $1::text[] IS NOT NULL)
+     ORDER BY delay_days DESC NULLS LAST`,
+    [nameFilter]
+  );
 
-  const myPendingTasks = tasks
-    .filter((t) => t.owner === currentUser && t.status !== "Done")
-    .map((t) => t.task);
+  const projects = projectsResult.rows;
+  if (projects.length === 0) return { projects: [] };
 
-  return `You are the VAS AI Operations Assistant for a telecom PMO control tower.
-Answer ONLY using the data below. Be concise, structured, and actionable.
-Use markdown with **Answer**, **Evidence**, and **Recommendation** sections.
+  const ids = projects.map((p) => p.id);
 
-PORTFOLIO DATA:
-- Total projects: ${projects.length}
-- Delayed projects: ${delayedProjects.join("; ") || "None"}
-- Open risks: ${openRisks.join("; ") || "None"}
-- Overdue vendor actions: ${overdueVendors.join("; ") || "None"}
-- Pending tasks for ${currentUser}: ${myPendingTasks.join(", ") || "None"}
+  const [risksResult, tasksResult, depsResult] = await Promise.all([
+    pool.query(
+      `SELECT project_id, description, severity, score
+       FROM risks WHERE project_id = ANY($1) AND status != 'Closed'
+       ORDER BY score DESC NULLS LAST`,
+      [ids]
+    ),
+    pool.query(
+      `SELECT project_id, title, status, due_date
+       FROM tasks WHERE project_id = ANY($1) AND status != 'Done' AND due_date < CURRENT_DATE`,
+      [ids]
+    ),
+    pool.query(
+      `SELECT project_id, depends_on, critical, status
+       FROM dependencies WHERE project_id = ANY($1) AND status != 'Resolved'`,
+      [ids]
+    ),
+  ]);
 
-USER QUESTION: ${question}
+  return {
+    projects: projects.map((p) => ({
+      ...p,
+      open_risks: risksResult.rows.filter((r) => r.project_id === p.id),
+      overdue_tasks: tasksResult.rows.filter((t) => t.project_id === p.id),
+      unresolved_dependencies: depsResult.rows.filter((d) => d.project_id === p.id),
+    })),
+  };
+}
 
-Keep your answer under 250 words.`;
+async function getOverdueTasksByUser() {
+  const result = await pool.query(
+    `SELECT u.name, COUNT(t.id) AS overdue_count
+     FROM tasks t
+     JOIN users u ON u.id = t.assignee_id
+     WHERE t.status != 'Done' AND t.due_date < CURRENT_DATE
+     GROUP BY u.id, u.name
+     ORDER BY overdue_count DESC`
+  );
+  return result.rows;
+}
+
+async function getActiveTasksByProject({ projectName } = {}) {
+  if (!projectName) {
+    return { error: "projectName is required" };
+  }
+  const result = await pool.query(
+    `SELECT p.name AS project, t.title, u.name AS assignee, t.status, t.due_date, t.priority
+     FROM tasks t
+     JOIN projects p ON p.id = t.project_id
+     LEFT JOIN users u ON u.id = t.assignee_id
+     WHERE p.name ILIKE '%' || $1 || '%'
+       AND t.status != 'Done'
+     ORDER BY t.due_date NULLS LAST`,
+    [projectName]
+  );
+  return result.rows;
+}
+
+async function getUserWorkload() {
+  const result = await pool.query(
+    `SELECT u.name, u.capacity_pct, u.allocated_pct,
+            COUNT(t.id) FILTER (WHERE t.status != 'Done') AS open_tasks
+     FROM users u
+     LEFT JOIN tasks t ON t.assignee_id = u.id
+     GROUP BY u.id, u.name, u.capacity_pct, u.allocated_pct
+     ORDER BY u.allocated_pct DESC`
+  );
+  return result.rows;
+}
+
+async function getProjectRisksSummary({ projectName } = {}) {
+  const result = await pool.query(
+    `SELECT p.name AS project, r.description, r.severity, r.score, r.status
+     FROM risks r
+     JOIN projects p ON p.id = r.project_id
+     WHERE ($1::text IS NULL OR p.name ILIKE '%' || $1 || '%')
+       AND r.status != 'Closed'
+     ORDER BY r.score DESC NULLS LAST
+     LIMIT 15`,
+    [projectName || null]
+  );
+  return result.rows;
+}
+
+const TOOLS = {
+  query_database: {
+    fn: queryDatabase,
+    schema: {
+      type: "function",
+      function: {
+        name: "query_database",
+        description: `Run a read-only SQL SELECT query against the live database to answer ANY question that needs real data — names, counts, dates, filters, joins across tables, anything. Prefer this over guessing, and prefer it over the other narrower tools unless one of them fits exactly. Results are capped at 200 rows. Only SELECT/WITH is allowed; no writes.\n\n${SCHEMA_DESCRIPTION}`,
+        parameters: {
+          type: "object",
+          properties: {
+            sql: { type: "string", description: "A single read-only PostgreSQL SELECT statement." },
+          },
+          required: ["sql"],
+        },
+      },
+    },
+  },
+  get_user_task_completion: {
+    fn: getUserTaskCompletion,
+    schema: {
+      type: "function",
+      function: {
+        name: "get_user_task_completion",
+        description: "Get EVERY user's completed-task count for a recent time window, sorted from most to least. Use this for ANY question about who worked the most, least, hardest, or was most/least productive — the list includes everyone, so read from the top for 'most' and the bottom for 'least'.",
+        parameters: {
+          type: "object",
+          properties: {
+            days: { type: "integer", description: "How many days back to look. Default 30. Use 7 for 'last week'." },
+          },
+        },
+      },
+    },
+  },
+  get_delay_analysis: {
+    fn: getDelayAnalysis,
+    schema: {
+      type: "function",
+      function: {
+        name: "get_delay_analysis",
+        description: "Get the root-cause breakdown for why one or more projects are late: their blocker field, open risks, overdue tasks, and unresolved/critical dependencies, all in one call. Use this for ANY question about why a project (or several) is delayed, blocked, or behind schedule.",
+        parameters: {
+          type: "object",
+          properties: {
+            projectNames: {
+              type: "array",
+              items: { type: "string" },
+              description: "Optional. Exact project names to analyze. Omit to get all currently delayed/blocked projects.",
+            },
+          },
+        },
+      },
+    },
+  },
+  get_active_tasks_by_project: {
+    fn: getActiveTasksByProject,
+    schema: {
+      type: "function",
+      function: {
+        name: "get_active_tasks_by_project",
+        description: "Get everyone currently assigned an active (not-Done) task on a specific project, with the task title, status, priority, and due date. Use this for ANY question about who is working on a named project right now.",
+        parameters: {
+          type: "object",
+          properties: {
+            projectName: { type: "string", description: "The project name (or part of it) to filter by, e.g. 'Arcane'." },
+          },
+          required: ["projectName"],
+        },
+      },
+    },
+  },
+  get_overdue_tasks_by_user: {
+    fn: getOverdueTasksByUser,
+    schema: {
+      type: "function",
+      function: {
+        name: "get_overdue_tasks_by_user",
+        description: "Get a count of overdue (past due, not Done) tasks grouped by assignee. Use for questions about who is behind or has the most overdue work.",
+        parameters: { type: "object", properties: {} },
+      },
+    },
+  },
+  get_user_workload: {
+    fn: getUserWorkload,
+    schema: {
+      type: "function",
+      function: {
+        name: "get_user_workload",
+        description: "Get each user's capacity, current allocation percentage, and open task count. Use for questions about who is overloaded or has spare capacity.",
+        parameters: { type: "object", properties: {} },
+      },
+    },
+  },
+  get_project_risks_summary: {
+    fn: getProjectRisksSummary,
+    schema: {
+      type: "function",
+      function: {
+        name: "get_project_risks_summary",
+        description: "Get open risks, optionally filtered to a specific project by name.",
+        parameters: {
+          type: "object",
+          properties: {
+            projectName: { type: "string", description: "Optional. Filter to a project whose name contains this text." },
+          },
+        },
+      },
+    },
+  },
+};
+
+async function runTool(name, args) {
+  const tool = TOOLS[name];
+  if (!tool) {
+    return { error: `Unknown tool: ${name}` };
+  }
+  try {
+    const rows = await tool.fn(args || {});
+    return { rows };
+  } catch (err) {
+    console.error(`Tool ${name} failed:`, err.message);
+    return { error: `Query failed: ${err.message}` };
+  }
 }
 
 /* ============================================================
-   SMART FALLBACK — works instantly without any API key
+   PROMPT BUILDER — static portfolio context, sent alongside
+   every request regardless of which tool (if any) gets called
 ============================================================= */
-function generateFallbackResponse(question, context) {
+function buildSystemPrompt() {
+  return `You are the VAS AI Operations Assistant for a telecom PMO control tower.
+Be concise, structured, and actionable. Use markdown with **Answer**, **Evidence**, and **Recommendation** sections.
+You have tools to query live data — use them whenever a question needs specific names, counts, or up-to-date numbers rather than guessing.
+
+CRITICAL — NEVER FABRICATE DATA:
+- Every name, ID, count, date, or row you present as "Evidence" MUST come from an actual tool result you received in this conversation. Never invent plausible-sounding names, IDs, or rows, even as an example or placeholder.
+- If a tool call fails or returns an error, you MUST say so plainly (e.g. "the data lookup failed: <reason>") — never paper over a failure by making up an answer that looks like it came from real data.
+- If you have not called a tool and have no real data to cite, say you don't have that information rather than answering as if you checked.
+- Do not show a SQL query in your answer unless you actually executed it via query_database and are reporting its real result.
+
+If a question has multiple parts (e.g. asking about people AND about project delays in the same message), call ALL the tools you need and answer every part in one combined response — don't ignore part of the question.
+When explaining why a project is late, connect the dots explicitly: cite the specific risk, overdue task, or dependency that's actually causing the delay, not just a generic "it's behind schedule."
+Keep your final answer under 300 words.`;
+}
+
+/* ============================================================
+   SMART FALLBACK — works instantly without any API key.
+   Now also hits the DB directly for a few high-value questions,
+   so the "who worked hardest" style queries work even without
+   a working Groq key.
+============================================================= */
+async function generateFallbackResponse(question, context) {
   const q = question.toLowerCase();
   const { projects, risks, tasks, vendors, currentUser } = context;
+
+  const wantsLeast = q.includes("least") || q.includes("worst performer") || q.includes("didn't work") || q.includes("didnt work") || q.includes("not working");
+  const wantsMost = q.includes("hardest") || q.includes("most tasks") || q.includes("top performer") || q.includes("best performer") || q.includes("finished the most") || q.includes("working the most") || q.includes("works the most") || q.includes("most active") || q.includes("hardest working") || q.includes("who's working") || q.includes("who is working");
+
+  if (wantsLeast || wantsMost) {
+    try {
+      const days = q.includes("last week") || q.includes("this week") ? 7 : 30;
+      const rows = await getUserTaskCompletion({ days });
+      const ranked = wantsLeast ? [...rows].reverse() : rows;
+      const top5 = ranked.slice(0, 5);
+      const label = wantsLeast ? "the fewest" : "the most";
+      return `**Answer:** Here's who completed ${label} tasks in the last ${days} days.
+
+**Evidence:**
+${top5.map((r, i) => `${i + 1}. **${r.name}** — ${r.completed_tasks} tasks completed`).join("\n")}
+
+**Recommendation:** ${wantsLeast ? "Check whether the lowest completers are blocked, under-resourced, or overloaded elsewhere before assuming low output." : `Consider recognizing ${top5[0]?.name}'s output this cycle.`}
+
+_*Note: based on task due-dates, not exact completion timestamps — the DB doesn't currently track when a task was marked Done.*_`;
+    } catch (err) {
+      console.error("Fallback DB query failed:", err.message);
+    }
+  }
+
+  if (q.includes("overloaded") || q.includes("capacity") || (q.includes("who") && q.includes("busy"))) {
+    try {
+      const rows = await getUserWorkload();
+      const overloaded = rows.filter((r) => Number(r.allocated_pct) >= 0.9);
+      return `**Answer:** ${overloaded.length} team member(s) are at or above 90% allocation.
+
+**Evidence:**
+${overloaded.map((r) => `- **${r.name}:** ${Math.round(r.allocated_pct * 100)}% allocated, ${r.open_tasks} open tasks`).join("\n") || "No one is currently overloaded."}
+
+**Recommendation:** Redistribute tasks from overloaded members to those with spare capacity.`;
+    } catch (err) {
+      console.error("Fallback DB query failed:", err.message);
+    }
+  }
 
   if (q.includes("morning brief") || q.includes("my day") || q.includes("priorities") || q.includes("today")) {
     const myOverdue = tasks.filter(
@@ -60,17 +408,30 @@ ${delayed.length > 0 ? `- **Top delayed projects:** ${delayed.map((p) => `${p.na
 **Recommendation:** Clear any overdue tasks first, then review blocked dependencies.`;
   }
 
-  if (q.includes("delay") || q.includes("late") || q.includes("blocking") || q.includes("blocked")) {
-    const delayed = projects
-      .filter((p) => p.delayDays > 0)
-      .sort((a, b) => b.delayDays - a.delayDays);
-    if (delayed.length === 0) return `**Answer:** No projects are currently delayed. Portfolio is on track!`;
-    return `**Answer:** ${delayed.length} projects are currently delayed.
+  if (q.includes("delay") || q.includes("late") || q.includes("blocking") || q.includes("blocked") || q.includes("behind")) {
+    try {
+      const { projects: analyzed } = await getDelayAnalysis({});
+      if (analyzed.length === 0) return `**Answer:** No projects are currently delayed. Portfolio is on track!`;
+
+      const lines = analyzed.slice(0, 3).map((p) => {
+        const reasons = [];
+        if (p.blocker) reasons.push(`blocker: "${p.blocker}"`);
+        if (p.open_risks.length) reasons.push(`${p.open_risks.length} open risk(s), top: "${p.open_risks[0].description}" (score ${p.open_risks[0].score ?? "—"})`);
+        if (p.overdue_tasks.length) reasons.push(`${p.overdue_tasks.length} overdue task(s), e.g. "${p.overdue_tasks[0].title}"`);
+        if (p.unresolved_dependencies.length) reasons.push(`${p.unresolved_dependencies.length} unresolved dependency(ies)`);
+        const causeText = reasons.length ? reasons.join("; ") : "no specific cause logged yet";
+        return `- **${p.name}** (${p.delay_days ?? 0}d late): ${causeText}`;
+      });
+
+      return `**Answer:** ${analyzed.length} project(s) are currently delayed.
 
 **Evidence:**
-${delayed.map((p) => `- **${p.name}:** ${p.delayDays} days late — ${p.blocker || "No blocker recorded"}`).join("\n")}
+${lines.join("\n")}
 
-**Recommendation:** ${delayed[0].name} has the longest delay. Immediate action: resolve "${delayed[0].blocker}".`;
+**Recommendation:** Resolve the highest-scoring risk and clear overdue tasks on ${analyzed[0].name} first — it has the longest delay.`;
+    } catch (err) {
+      console.error("Fallback DB query failed:", err.message);
+    }
   }
 
   if (q.includes("risk")) {
@@ -90,17 +451,7 @@ ${topRisks.map((r) => `- **${r.project}:** ${r.risk} (Score ${r.score}, ${r.prob
 **Evidence:**
 ${overdue.map((v) => `- **${v.vendor}** (${v.project}): ${v.action} — ${v.daysOpen} days open, owner: ${v.owner}`).join("\n") || "None overdue"}
 
-**Recommendation:** ${overdue.length > 0 ? "Follow up on OpenCode security findings and DBA validation immediately." : "All vendor actions are on track."}`;
-  }
-
-  if (q.includes("overloaded") || q.includes("team") || q.includes("capacity") || q.includes("who")) {
-    return `**Answer:** Team capacity is tracked on the Team Board.
-
-**Evidence:**
-- Engineers with >90% allocation are flagged red.
-- Check individual task assignments and utilization percentages there.
-
-**Recommendation:** Redistribute tasks from overloaded members to those with green capacity.`;
+**Recommendation:** ${overdue.length > 0 ? "Follow up immediately." : "All vendor actions are on track."}`;
   }
 
   if (q.includes("go-live") || q.includes("golive") || q.includes("ready") || q.includes("deploy")) {
@@ -123,12 +474,129 @@ ${overdue.map((v) => `- **${v.vendor}** (${v.project}): ${v.action} — ${v.days
 - ${vendors.filter((v) => v.status === "Overdue").length} overdue vendor actions
 - ${tasks.filter((t) => t.owner === currentUser && t.status !== "Done").length} pending tasks for you
 
-**Recommendation:** Ask me specifically about delays, risks, vendors, Go-Live readiness, or your morning brief for a detailed answer.`;
+**Recommendation:** Ask me specifically about delays, risks, vendors, top performers, workload, or Go-Live readiness for a detailed answer.`;
+}
+
+async function callGroqSimple(systemPrompt, userPrompt, maxTokens = 600) {
+  const apiKey = process.env.GROQ_API_KEY;
+  if (!apiKey) throw new Error("No GROQ_API_KEY in environment");
+
+  const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: "openai/gpt-oss-120b",
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt },
+      ],
+      temperature: 0.4,
+      max_tokens: maxTokens,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Groq API error: ${response.status} ${await response.text()}`);
+  }
+
+  const data = await response.json();
+  return data.choices[0].message.content;
 }
 
 /* ============================================================
-   MAIN HANDLER — Groq Cloud with local fallback
+   VENDOR EMAIL DRAFTING
+   Not yet wired into Vendors.jsx (which still builds its draft
+   locally as a template string) — this exists so that page can
+   be upgraded to a real AI draft later without a backend change.
 ============================================================= */
+export async function draftVendorEmail(req, res) {
+  const { vendor, project, action, due, daysOpen, owner } = req.body;
+
+  if (!vendor || !action) {
+    return res.status(400).json({ error: "vendor and action are required" });
+  }
+
+  const fallbackDraft = `Subject: Follow-up — ${action} (${project || "project"})
+
+Hi ${vendor} team,
+
+This is a follow-up on the pending action "${action}" for ${project || "the project"}, originally due ${due || "N/A"}. This item has now been open for ${daysOpen ?? "several"} days and is affecting the project's delivery timeline.
+
+Could you please provide an updated status or completion date by end of day tomorrow?
+
+Thanks,
+${owner || "The VAS Team"}`;
+
+  try {
+    const draft = await callGroqSimple(
+      "You draft short, professional vendor follow-up emails for a telecom PMO. Be firm but polite. Output only the email (with a Subject line), no preamble or commentary.",
+      `Draft a follow-up email to vendor "${vendor}" about the pending action "${action}" for project "${project || "N/A"}". It was due ${due || "N/A"} and has been open for ${daysOpen ?? "several"} days. Sign off as "${owner || "The VAS Team"}".`,
+      400
+    );
+    res.json({ draft, source: "groq-cloud" });
+  } catch (err) {
+    console.warn("Groq failed for vendor draft, using template fallback:", err.message);
+    res.json({ draft: fallbackDraft, source: "fallback" });
+  }
+}
+
+/* ============================================================
+   WEEKLY REPORT GENERATION
+============================================================= */
+export async function generateWeeklyReport(req, res) {
+  const { context } = req.body;
+
+  if (!context) {
+    return res.status(400).json({ error: "context is required" });
+  }
+
+  const fallbackReport = `**Weekly Portfolio Report**
+
+- Projects tracked: ${context.projects?.length ?? "N/A"}
+- Open risks: ${context.risks?.filter((r) => r.status === "Open").length ?? "N/A"}
+- Overdue vendor actions: ${context.vendors?.filter((v) => v.status === "Overdue").length ?? "N/A"}
+
+_Cloud LLM unavailable — this is a basic auto-generated summary. Try again shortly for a full narrative report._`;
+
+  try {
+    const report = await callGroqSimple(
+      "You write concise, professional weekly status reports for a telecom PMO leadership audience. Use markdown headers and bullet points. Be factual — only use the data provided, never invent figures.",
+      `Write this week's portfolio status report from the following data:\n\n${JSON.stringify(context)}`,
+      900
+    );
+    res.json({ report, source: "groq-cloud" });
+  } catch (err) {
+    console.warn("Groq failed for weekly report, using fallback:", err.message);
+    res.json({ report: fallbackReport, source: "fallback" });
+  }
+}
+
+/* ============================================================
+   MEETING MINUTES SUMMARIZATION
+============================================================= */
+export async function summarizeMeetingMinutes(req, res) {
+  const { notes } = req.body;
+
+  if (!notes) {
+    return res.status(400).json({ error: "notes is required" });
+  }
+
+  const fallbackSummary = `**Raw notes (cloud summarization unavailable):**\n\n${notes}`;
+
+  try {
+    const summary = await callGroqSimple(
+      "You turn raw, messy meeting notes into clean, structured minutes for a telecom PMO. Use markdown with sections for Decisions, Action Items (with owners if mentioned), and Open Questions. Never invent details not present in the notes.",
+      `Summarize these raw meeting notes into structured minutes:\n\n${notes}`,
+      700
+    );
+    res.json({ summary, source: "groq-cloud" });
+  } catch (err) {
+    console.warn("Groq failed for meeting minutes, using fallback:", err.message);
+    res.json({ summary: fallbackSummary, source: "fallback" });
+  }
+}
+
+
 export async function chatWithAI(req, res) {
   const { question, context } = req.body;
 
@@ -136,247 +604,95 @@ export async function chatWithAI(req, res) {
     return res.status(400).json({ error: "Question is required" });
   }
 
-  const prompt = buildPrompt(question, context);
-
-  // Try Groq Cloud first
   try {
     const apiKey = process.env.GROQ_API_KEY;
     if (!apiKey) throw new Error("No GROQ_API_KEY in environment");
 
-    const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "qwen/qwen3.8-27b",
-        messages: [
-          {
-            role: "system",
-            content:
-              "You are the VAS AI Operations Assistant for a telecom PMO control tower. Answer ONLY using the data provided. Be concise, structured, and actionable. Use markdown with **Answer**, **Evidence**, and **Recommendation** sections.",
-          },
-          { role: "user", content: prompt },
-        ],
-        temperature: 0.3,
-        max_tokens: 600,
-      }),
-    });
+    const messages = [
+      { role: "system", content: buildSystemPrompt() },
+      ...(Array.isArray(context?.history) ? context.history : []),
+      { role: "user", content: question },
+    ];
 
-    if (!response.ok) {
-      const errText = await response.text();
-      throw new Error(`Groq API error: ${response.status} ${errText}`);
+    const toolSchemas = Object.values(TOOLS).map((t) => t.schema);
+
+    let finalMessage = null;
+    const MAX_ROUNDS = 3;
+
+    for (let round = 0; round < MAX_ROUNDS; round++) {
+      const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: "openai/gpt-oss-120b", // supports tool calling on Groq
+          messages,
+          tools: toolSchemas,
+          tool_choice: "auto",
+          temperature: 0.3,
+          max_tokens: 800,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Groq API error: ${response.status} ${await response.text()}`);
+      }
+
+      const data = await response.json();
+      const choice = data.choices[0];
+
+      if (!choice.message.tool_calls?.length) {
+        console.log(`[AI] Answered "${question}" with NO tool call — verify this wasn't a data question.`);
+        finalMessage = choice.message;
+        break;
+      }
+
+      // Model wants data — run each requested tool, feed results back,
+      // and let it decide on the next round whether it needs more.
+      messages.push(choice.message);
+      for (const call of choice.message.tool_calls) {
+        const args = call.function.arguments ? JSON.parse(call.function.arguments) : {};
+        console.log(`[AI TOOL CALL] ${call.function.name}(${JSON.stringify(args)})`);
+        const result = await runTool(call.function.name, args);
+        console.log(`[AI TOOL RESULT] ${call.function.name} ->`, JSON.stringify(result).slice(0, 500));
+        messages.push({
+          role: "tool",
+          tool_call_id: call.id,
+          content: JSON.stringify(result),
+        });
+      }
+
+      // Last allowed round — force a final answer instead of another tool call.
+      if (round === MAX_ROUNDS - 1) {
+        const closingResponse = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            model: "openai/gpt-oss-120b",
+            messages,
+            temperature: 0.3,
+            max_tokens: 800,
+          }),
+        });
+        if (!closingResponse.ok) {
+          throw new Error(`Groq API error on closing round: ${closingResponse.status} ${await closingResponse.text()}`);
+        }
+        const closingData = await closingResponse.json();
+        finalMessage = closingData.choices[0].message;
+      }
     }
 
-    const data = await response.json();
-    const reply = data.choices[0].message.content;
-
     return res.json({
-      reply,
+      reply: finalMessage.content,
       source: "groq-cloud",
       note: "Powered by Groq Cloud (free tier)",
     });
   } catch (err) {
-    // Smart fallback — works instantly without any API key
     console.warn("Groq failed, using fallback:", err.message);
-    const reply = generateFallbackResponse(question, context);
+    const reply = await generateFallbackResponse(question, context || {});
     return res.json({
       reply,
       source: "fallback",
-      note: "Cloud LLM unavailable. Using built-in rule engine.",
+      note: "Cloud LLM unavailable. Using built-in rule engine with live DB lookups.",
     });
   }
 }
-/* ============================================================
-   VENDOR EMAIL DRAFTER
-============================================================= */
-export async function draftVendorEmail(req, res) {
-  const { vendor, action, daysOpen, owner, project } = req.body;
-
-  const prompt = `You are a professional telecom PMO manager at Ooredoo. Draft a concise, polite but firm follow-up email to ${vendor} regarding this pending action on project "${project}": "${action}".
-
-This action is ${daysOpen} days overdue. The email should:
-1. Open with a professional greeting
-2. Reference the project and the specific pending action
-3. Note the delay (${daysOpen} days overdue)
-4. Request an immediate status update and ETA
-5. Mention escalation path if not resolved within 48 hours
-6. Close professionally
-
-Sign the email as: ${owner}, VAS PMO Team
-
-Return ONLY the email body text. No markdown code blocks, no explanations.`;
-
-  try {
-    const apiKey = process.env.GROQ_API_KEY;
-    if (!apiKey) throw new Error("No key");
-
-    const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: "qwen/qwen3.8-27b",
-        messages: [{ role: "user", content: prompt }],
-        temperature: 0.4,
-        max_tokens: 500,
-      }),
-    });
-
-    if (!response.ok) throw new Error("Groq error");
-    const data = await response.json();
-    return res.json({ email: data.choices[0].message.content.trim(), source: "groq-cloud" });
-  } catch (err) {
-    console.warn("Groq email draft failed, using fallback:", err.message);
-    const email = `Subject: Urgent Follow-up – ${project}: ${action}
-
-Dear ${vendor} Team,
-
-I hope this message finds you well.
-
-I am writing to follow up on the pending action for the ${project} project: "${action}". This item is now ${daysOpen} days overdue, and its delay is impacting our delivery timeline.
-
-Could you please provide an immediate status update and confirm the revised ETA for completion? If we do not receive a response within the next 48 hours, we will need to escalate this to senior management.
-
-Thank you for your prompt attention to this matter.
-
-Best regards,
-${owner}
-VAS PMO Team`;
-
-    return res.json({ email, source: "fallback" });
-  }
-}
-/* ============================================================
-   WEEKLY DIRECTOR REPORT
-============================================================= */
-function generateWeeklyReportFallback(context) {
-  const { projects, risks, vendors, kpiHistory } = context;
-  const delayed = projects.filter((p) => p.delayDays > 0).sort((a, b) => b.delayDays - a.delayDays);
-  const blocked = projects.filter((p) => p.status === "Blocked");
-  const onTrack = projects.filter((p) => p.status === "On Track");
-  const criticalRisks = risks.filter((r) => r.score >= 9 && r.status === "Open");
-  const overdueVendors = vendors.filter((v) => v.status === "Overdue");
-  const latestKpi = kpiHistory.length > 0 ? kpiHistory[kpiHistory.length - 1] : null;
-
-  return `**WEEKLY DIRECTOR REPORT — VAS PMO Portfolio**
-
-**1. Executive Summary**
-This week the portfolio has ${projects.length} active projects. ${delayed.length} are delayed and require attention. ${criticalRisks.length} critical risks remain open.
-
-**2. Portfolio Health**
-- 🟢 On Track: ${onTrack.length}
-- 🟡 Delayed: ${delayed.length}
-- 🔴 Blocked: ${blocked.length}
-- ⚠️ Critical Risks: ${criticalRisks.length}
-- 📋 Overdue Vendor Actions: ${overdueVendors.length}
-
-**3. Critical Issues**
-${delayed.length > 0 ? delayed.map((p) => `- **${p.name}** (${p.delayDays}d late): ${p.blocker || "No blocker documented"}`).join("\n") : "- No delayed projects this week."}
-${blocked.length > 0 ? "\n" + blocked.map((p) => `- **${p.name}** (Blocked): ${p.blocker || "No blocker documented"}`).join("\n") : ""}
-
-**4. Risk Watch**
-${criticalRisks.length > 0 ? criticalRisks.map((r) => `- **${r.project}** — ${r.risk} (Score: ${r.score})`).join("\n") : "- No critical risks."}
-
-**5. Vendor Actions**
-${overdueVendors.length > 0 ? overdueVendors.map((v) => `- **${v.vendor}** (${v.project}): ${v.action} — ${v.daysOpen} days overdue`).join("\n") : "- All vendor actions on track."}
-
-**6. KPI Trends**
-${latestKpi ? `- On-Time Delivery: ${latestKpi.OTD}%\n- Vendor SLA: ${latestKpi.SLA}%\n- Avg Delay: ${latestKpi.delay} days` : "- No KPI data available."}
-
-**7. Next Week Priorities**
-- Resolve blockers on delayed projects
-- Close overdue vendor actions (${overdueVendors.length} items)
-- Review and mitigate top risks
-- Confirm Go-Live readiness for green projects
-
----
-*Generated by VAS AI Operations Assistant*`;
-}
-
-export async function generateWeeklyReport(req, res) {
-  const { context } = req.body;
-  const prompt = `Generate a professional Weekly Director Report for a telecom PMO control tower. Use ONLY the data provided. Format with markdown sections: Executive Summary, Portfolio Health, Critical Issues, Risk Watch, Vendor Actions, KPI Trends, Next Week Priorities. Keep under 400 words.\n\nDATA:\n${JSON.stringify(context, null, 2)}`;
-
-  try {
-    const apiKey = process.env.GROQ_API_KEY;
-    if (!apiKey) throw new Error("No key");
-
-    const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: "llama-3.3-70b-specdec", // change to whatever works for you
-        messages: [{ role: "user", content: prompt }],
-        temperature: 0.3,
-        max_tokens: 700,
-      }),
-    });
-
-    if (!response.ok) throw new Error("Groq error");
-    const data = await response.json();
-    return res.json({ report: data.choices[0].message.content, source: "groq-cloud" });
-  } catch (err) {
-    console.warn("Groq report failed, using fallback:", err.message);
-    return res.json({ report: generateWeeklyReportFallback(context), source: "fallback" });
-  }
-}
-/* ============================================================
-   MEETING MINUTES SUMMARIZER
-============================================================= */
-function summarizeMeetingMinutesFallback(notes) {
-  const lines = notes.split("\n").map((l) => l.replace(/^-\s*/, "").trim()).filter((l) => l.length > 0);
-  const decisions = lines.filter((l) => /decision|agreed|approved|confirm|decided/i.test(l));
-  const actions = lines.filter((l) => /action|task|todo|follow.up|need to|will|should/i.test(l));
-  const risks = lines.filter((l) => /risk|issue|concern|problem|blocker|warning/i.test(l));
-
-  return `**Meeting Topic:** [Please specify]
-**Date:** [Please specify]
-**Attendees:** [Not specified]
-
-**Decisions Made:**
-${decisions.length > 0 ? decisions.map((d) => `- ${d}`).join("\n") : "- [No decisions detected — please review raw notes]"}
-
-**Action Items:**
-${actions.length > 0 ? actions.map((a) => `- ${a}`).join("\n") : "- [No actions detected — please review raw notes]"}
-
-**Risks Identified:**
-${risks.length > 0 ? risks.map((r) => `- ${r}`).join("\n") : "- [No risks detected — please review raw notes]"}
-
-**Next Steps:**
-- Distribute these minutes to attendees
-- Add action items to the task tracker
-- Follow up on decisions by next meeting
-
----
-*Generated by VAS AI Operations Assistant (fallback mode)*`;
-}
-
-export async function summarizeMeetingMinutes(req, res) {
-  const { notes } = req.body;
-  const prompt = `You are a professional PMO secretary. Format these raw meeting notes into structured minutes with: Meeting Topic, Date, Attendees, Decisions Made, Action Items (with owners and due dates), Risks Identified, Next Steps. If info is missing, write "Not specified".\n\nRAW NOTES:\n${notes}`;
-
-  try {
-    const apiKey = process.env.GROQ_API_KEY;
-    if (!apiKey) throw new Error("No key");
-
-    const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: "qwen/qwen3.8-27b",
-        messages: [{ role: "user", content: prompt }],
-        temperature: 0.3,
-        max_tokens: 700,
-      }),
-    });
-
-    if (!response.ok) throw new Error("Groq error");
-    const data = await response.json();
-    return res.json({ summary: data.choices[0].message.content, source: "groq-cloud" });
-  } catch (err) {
-    console.warn("Groq minutes failed, using fallback:", err.message);
-    return res.json({ summary: summarizeMeetingMinutesFallback(notes), source: "fallback" });
-  }
-}
-

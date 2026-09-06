@@ -12,10 +12,19 @@ export async function getTasksByAssignee(req, res) {
 export async function updateTaskStatus(req, res) {
   const { id } = req.params;
   const { status } = req.body;
+
+  // Keep progress consistent with status: Done always means 100%,
+  // Not Started always means 0%. In Progress/Blocked leave progress
+  // exactly as it is — no automatic rule applies to those.
+  let progressClause = "";
+  if (status === "Done") progressClause = ", progress = 1";
+  else if (status === "Not Started") progressClause = ", progress = 0";
+
   const result = await pool.query(
-    "UPDATE tasks SET status = $1 WHERE id = $2 RETURNING *",
+    `UPDATE tasks SET status = $1${progressClause} WHERE id = $2 RETURNING *`,
     [status, id]
   );
+  if (result.rows.length === 0) return res.status(404).json({ error: "Task not found" });
   res.json(result.rows[0]);
 }
 
@@ -82,7 +91,14 @@ const TASK_EDITABLE_FIELDS = [
 
 export async function updateTask(req, res) {
   const { id } = req.params;
-  const updates = req.body;
+  const updates = { ...req.body };
+
+  // Same consistency rule as updateTaskStatus: Done -> 100%, Not
+  // Started -> 0%, regardless of whatever progress value was sent.
+  // In Progress/Blocked pass through whatever progress was given.
+  if (updates.status === "Done") updates.progress = 1;
+  else if (updates.status === "Not Started") updates.progress = 0;
+
   const fieldsToUpdate = Object.keys(updates).filter((k) => TASK_EDITABLE_FIELDS.includes(k));
 
   if (fieldsToUpdate.length === 0) {
