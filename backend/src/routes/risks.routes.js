@@ -1,4 +1,3 @@
-// backend/src/routes/risks.routes.js
 import { Router } from "express";
 import {
   getAllRisks,
@@ -6,11 +5,12 @@ import {
   updateRisk,
   deleteRisk,
 } from "../controllers/risks.controller.js";
+import { requireProjectLeadToCreate, requireRecordOwnerOrProjectLeadOrManager } from "../middleware/ownership.middleware.js";
 
 const router = Router();
 router.get("/risks", getAllRisks);
-router.post("/risks", createRisk);
-router.put("/risks/:id", updateRisk);
-router.delete("/risks/:id", deleteRisk);
+router.post("/risks", requireProjectLeadToCreate("projectId"), createRisk);
+router.put("/risks/:id", requireRecordOwnerOrProjectLeadOrManager("risks", "owner_id"), updateRisk);
+router.delete("/risks/:id", requireRecordOwnerOrProjectLeadOrManager("risks", "owner_id"), deleteRisk);
 
 export default router;

@@ -5,11 +5,12 @@ import {
   updateMilestone,
   deleteMilestone,
 } from "../controllers/milestones.controller.js";
+import { requireProjectLeadToCreate, requireRecordOwnerOrProjectLeadOrManager } from "../middleware/ownership.middleware.js";
 
 const router = Router();
 router.get("/milestones", getAllMilestones);
-router.post("/milestones", createMilestone);
-router.put("/milestones/:id", updateMilestone);
-router.delete("/milestones/:id", deleteMilestone);
+router.post("/milestones", requireProjectLeadToCreate("projectId"), createMilestone);
+router.put("/milestones/:id", requireRecordOwnerOrProjectLeadOrManager("milestones", "owner_id"), updateMilestone);
+router.delete("/milestones/:id", requireRecordOwnerOrProjectLeadOrManager("milestones", "owner_id"), deleteMilestone);
 
 export default router;

@@ -14,6 +14,10 @@ export async function login(req, res) {
   if (!user || !user.password_hash) {
     return res.status(401).json({ error: "Invalid name or password" });
   }
+
+  if (user.is_active === false) {
+    return res.status(403).json({ error: "This account has been deactivated." });
+  }
  
   const valid = await bcrypt.compare(password, user.password_hash);
   if (!valid) {
@@ -32,21 +36,17 @@ export async function login(req, res) {
   });
 }
  
-// Verifies a token and returns the current user — used on app load
-// to check "is this person already logged in" without asking again.
+// requireAuth middleware already verified the token and set req.user
+// before this runs — no need to re-verify it here. This just fetches
+// the freshest profile (in case name/role/access_level/is_active
+// changed since the token was issued).
 export async function me(req, res) {
-  const authHeader = req.headers.authorization;
-  const token = authHeader && authHeader.split(" ")[1];
-  if (!token) return res.status(401).json({ error: "No token" });
- 
-  try {
-    const payload = jwt.verify(token, process.env.JWT_SECRET);
-    const result = await pool.query("SELECT id, name, role, access_level FROM users WHERE id = $1", [payload.id]);
-    const user = result.rows[0];
-    if (!user) return res.status(401).json({ error: "User no longer exists" });
-    res.json({ user });
-  } catch (err) {
-    res.status(401).json({ error: "Invalid or expired token" });
-  }
+  const result = await pool.query(
+    "SELECT id, name, role, access_level, is_active FROM users WHERE id = $1",
+    [req.user.id]
+  );
+  const user = result.rows[0];
+  if (!user) return res.status(401).json({ error: "User no longer exists" });
+  if (user.is_active === false) return res.status(403).json({ error: "This account has been deactivated." });
+  res.json({ user });
 }
- 

@@ -4,8 +4,15 @@
 
 export const API_BASE = "http://localhost:4000/api";
 
+function authHeaders() {
+  const token = localStorage.getItem("vas_token");
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
 async function getJSON(path) {
-  const res = await fetch(`${API_BASE}${path}`);
+  const res = await fetch(`${API_BASE}${path}`, {
+    headers: { ...authHeaders() },
+  });
 
   if (!res.ok) {
     throw new Error(`${path} returned ${res.status}`);
@@ -17,7 +24,7 @@ async function getJSON(path) {
 async function sendJSON(path, method, body) {
   const res = await fetch(`${API_BASE}${path}`, {
     method,
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...authHeaders() },
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
 
@@ -253,6 +260,38 @@ export function updateVendor(id, fields) {
 
 export function deleteVendor(id) {
   return del(`/vendors/${id}`);
+}
+
+// ============================================================
+// USER CRUD
+// ============================================================
+
+export function createUser(payload) {
+  return sendJSON("/users", "POST", payload);
+}
+
+export function updateUser(id, fields) {
+  return sendJSON(`/users/${id}`, "PUT", fields);
+}
+
+export function resetUserPassword(id, password) {
+  return sendJSON(`/users/${id}/password`, "PUT", { password });
+}
+
+export function deleteUser(id) {
+  return del(`/users/${id}`);
+}
+
+// ============================================================
+// SETTINGS
+// ============================================================
+
+export function fetchSettings() {
+  return getJSON("/settings");
+}
+
+export function updateSettings(fields) {
+  return sendJSON("/settings", "PUT", fields);
 }
 
 // ============================================================
