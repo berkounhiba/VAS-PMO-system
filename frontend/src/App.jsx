@@ -11,7 +11,7 @@ import { ROLES, hasPerm } from "./roles";
 import {
   fetchProjects, fetchTasks, fetchUsers, fetchMilestones, fetchRisks,
   fetchDependencies, fetchUatSit, fetchGolive, fetchVendors, fetchMeetings, fetchKpis,
-  fetchWeeklySummaries, fetchMe, updateTaskStatus as apiUpdateTaskStatus,
+  fetchWeeklySummaries, fetchMe, updateTaskStatus as apiUpdateTaskStatus, fetchSettings,
 } from "./api";
 import {
   buildLookups, normalizeProject, normalizeTask, normalizeMilestone, normalizeRisk,
@@ -70,6 +70,7 @@ export default function App() {
   const [rawMeetings, setRawMeetings] = useState([]);
   const [rawKpis, setRawKpis] = useState([]);
   const [weeklySummaries, setWeeklySummaries] = useState([]);
+  const [appSettings, setAppSettings] = useState(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
 
@@ -109,12 +110,12 @@ export default function App() {
     Promise.all([
       fetchProjects(), fetchTasks(), fetchUsers(), fetchMilestones(), fetchRisks(),
       fetchDependencies(), fetchUatSit(), fetchGolive(), fetchVendors(), fetchMeetings(), fetchKpis(),
-      fetchWeeklySummaries(),
+      fetchWeeklySummaries(), fetchSettings(),
     ])
-      .then(([p, t, u, m, r, dep, uat, gl, v, mt, k, ws]) => {
+      .then(([p, t, u, m, r, dep, uat, gl, v, mt, k, ws, s]) => {
         setRawProjects(p); setRawTasks(t); setUsers(u); setRawMilestones(m); setRawRisks(r);
         setRawDependencies(dep); setRawUatSit(uat); setRawGolive(gl); setRawVendors(v);
-        setRawMeetings(mt); setRawKpis(k); setWeeklySummaries(ws);
+        setRawMeetings(mt); setRawKpis(k); setWeeklySummaries(ws); setAppSettings(s);
         setLoading(false);
       })
       .catch((err) => {
@@ -144,7 +145,10 @@ export default function App() {
     const pDeps = rawDependencies.filter((d) => d.project_id === p.id);
     return {
       ...normalized,
-      health: calculateAutoHealth(normalized, pTasks, pMilestones, pRisks, pDeps),
+      health: calculateAutoHealth(normalized, pTasks, pMilestones, pRisks, pDeps, {
+        redDelayDays: appSettings?.red_delay_days,
+        amberDelayDays: appSettings?.amber_delay_days,
+      }),
     };
   });
 

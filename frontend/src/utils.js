@@ -45,12 +45,18 @@ export function fuzzyMatch(query, text) {
   return String(text).toLowerCase().includes(query.toLowerCase());
 }
 
-export function calculateAutoHealth(project, projectTasks, projectMilestones, projectRisks, projectDeps) {
+export function calculateAutoHealth(project, projectTasks, projectMilestones, projectRisks, projectDeps, thresholds = {}) {
+  // Falls back to the old hardcoded values only if settings haven't
+  // loaded yet — as soon as they have, these come from the DB via
+  // the Admin page, so editing them there actually changes behavior.
+  const redDelayDays = thresholds.red_delay_days ?? 14;
+  const amberDelayDays = thresholds.amber_delay_days ?? 7;
+
+
   let score = 100;
 
-  if (project.delayDays > 30) score -= 40;
-  else if (project.delayDays > 14) score -= 25;
-  else if (project.delayDays > 7) score -= 10;
+  if (project.delayDays >= redDelayDays) score -= 40;
+  else if (project.delayDays >= amberDelayDays) score -= 20;
   else if (project.delayDays > 0) score -= 5;
 
   const overdueTasks = (projectTasks || []).filter(t => t.finish && new Date(t.finish) < new Date() && t.status !== "Done");
@@ -72,7 +78,17 @@ export function calculateAutoHealth(project, projectTasks, projectMilestones, pr
 
   if (project.progress !== null && project.progress < 0.3 && project.delayDays > 14) score -= 10;
 
-  if (score >= 75) return "Green";
-  if (score >= 45) return "Amber";
-  return "Red";
+  let bucket;
+  if (score >= 75) bucket = "Green";
+  else if (score >= 45) bucket = "Amber";
+  else bucket = "Red";
+
+  // Hard floor: the admin-configured delay thresholds are an explicit
+  // promise ("Red if delay >= X days"), not just one input among many.
+  // Other risk factors can still push a project to a worse color below
+  // the threshold, but never a BETTER color than the threshold guarantees.
+  if (project.delayDays >= redDelayDays) bucket = "Red";
+  else if (project.delayDays >= amberDelayDays && bucket === "Green") bucket = "Amber";
+
+  return bucket;
 }

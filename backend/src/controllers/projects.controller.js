@@ -8,19 +8,41 @@ export async function getAllProjects(req, res) {
 export async function getAllProjectsFull(req, res) {
   const result = await pool.query(`
     SELECT
-      p.id, p.name, p.domain, p.business, u.name AS lead, p.lead_id AS "leadId",
-      p.priority, p.status, p.phase, p.progress,
-      p.planned_start AS "plannedStart", p.planned_go_live AS "plannedFinish",
-      p.forecast_go_live AS "forecastFinish", p.delay_days AS "delayDays",
-      p.health, p.blocker, p.next_action AS "nextAction", p.escalation, p.remarks,
+      p.id,
+      p.name,
+      p.domain,
+      p.business,
+      u.name AS lead,
+      p.lead_id AS "leadId",
+      p.priority,
+      p.status,
+      p.phase,
+      p.progress,
+      p.planned_start AS "plannedStart",
+      p.planned_go_live AS "plannedFinish",
+      p.forecast_go_live AS "forecastFinish",
+
+      CASE
+        WHEN p.status = 'Completed' THEN 0
+        WHEN p.forecast_go_live IS NULL THEN 0
+        WHEN CURRENT_DATE > p.forecast_go_live
+          THEN CURRENT_DATE - p.forecast_go_live
+        ELSE 0
+      END AS "delayDays",
+
+      p.health,
+      p.blocker,
+      p.next_action AS "nextAction",
+      p.escalation,
+      p.remarks,
       p.project_type AS "projectType"
     FROM projects p
     LEFT JOIN users u ON u.id = p.lead_id
     ORDER BY p.name
   `);
+
   res.json(result.rows);
 }
-
 export async function getITProjects(req, res) {
   const result = await pool.query(`
     SELECT p.id, p.name, p.status, p.health, p.progress,
@@ -65,7 +87,7 @@ export async function createProject(req, res) {
 const EDITABLE_FIELDS = [
   "name", "domain", "business", "priority", "status", "phase",
   "progress", "blocker", "next_action", "escalation", "remarks",
-  "delay_days", "health", "planned_start", "planned_go_live", "forecast_go_live", "lead_id",
+  "health", "planned_start", "planned_go_live", "forecast_go_live", "lead_id",
 ];
 
 export async function updateProject(req, res) {

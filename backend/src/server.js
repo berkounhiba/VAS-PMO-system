@@ -15,13 +15,16 @@ import kpisRoutes from "./routes/kpis.routes.js";
 import weeklySummariesRoutes from "./routes/weeklySummaries.routes.js";
 import authRoutes from "./routes/auth.routes.js";
 import aiRoutes from "./routes/ai.routes.js";
+import settingsRoutes from "./routes/settings.routes.js";
+import { requireAuth } from "./middleware/auth.middleware.js";
 
 const app = express();
 app.use(cors());
 app.use(express.json());
+app.use("/api", authRoutes); // /login is public, /me protects itself
+app.use("/api", requireAuth); // everything below this line requires a valid token
 app.use("/api", tasksRoutes);
 app.use("/api", usersRoutes);
-app.use("/api", authRoutes);
 app.use("/api", projectsRoutes);
 app.use("/api", milestonesRoutes);
 app.use("/api", risksRoutes);
@@ -33,6 +36,7 @@ app.use("/api", vendorsRoutes);
 app.use("/api", meetingsRoutes);
 app.use("/api", kpisRoutes);
 app.use("/api", aiRoutes);
+app.use("/api", settingsRoutes);
 
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => console.log(`API running on http://localhost:${PORT}`));
