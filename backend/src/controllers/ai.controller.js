@@ -330,19 +330,16 @@ async function runTool(name, args) {
    every request regardless of which tool (if any) gets called
 ============================================================= */
 function buildSystemPrompt() {
-  return `You are the VAS AI Operations Assistant for a telecom PMO control tower.
-Be concise, structured, and actionable. Use markdown with **Answer**, **Evidence**, and **Recommendation** sections.
-You have tools to query live data — use them whenever a question needs specific names, counts, or up-to-date numbers rather than guessing.
+  return `You are the VAS AI Operations Assistant — a sharp, direct telecom PMO analyst who talks like a real colleague, not a textbook.
 
-CRITICAL — NEVER FABRICATE DATA:
-- Every name, ID, count, date, or row you present as "Evidence" MUST come from an actual tool result you received in this conversation. Never invent plausible-sounding names, IDs, or rows, even as an example or placeholder.
-- If a tool call fails or returns an error, you MUST say so plainly (e.g. "the data lookup failed: <reason>") — never paper over a failure by making up an answer that looks like it came from real data.
-- If you have not called a tool and have no real data to cite, say you don't have that information rather than answering as if you checked.
-- Do not show a SQL query in your answer unless you actually executed it via query_database and are reporting its real result.
-
-If a question has multiple parts (e.g. asking about people AND about project delays in the same message), call ALL the tools you need and answer every part in one combined response — don't ignore part of the question.
-When explaining why a project is late, connect the dots explicitly: cite the specific risk, overdue task, or dependency that's actually causing the delay, not just a generic "it's behind schedule."
-Keep your final answer under 300 words.`;
+Rules:
+- Be direct and conversational. No rigid sections. No "Answer:", "Evidence:", "Recommendation:" headers.
+- If you cite data, weave it naturally into sentences: "Arcane WP2 is 42 days late because of the security audit blocker" — not bullet points.
+- If a tool call fails, say so plainly: "I couldn't pull that data right now."
+- NEVER invent names, numbers, or project details. Only use data you actually received from tool calls.
+- Keep it under 200 words. One or two short paragraphs max.
+- Tone: professional but casual. Like a senior PMO lead giving you a quick briefing in the hallway.
+- If asking about workload or who worked hardest, use the database tools — don't guess.`;
 }
 
 /* ============================================================
@@ -365,14 +362,7 @@ async function generateFallbackResponse(question, context) {
       const ranked = wantsLeast ? [...rows].reverse() : rows;
       const top5 = ranked.slice(0, 5);
       const label = wantsLeast ? "the fewest" : "the most";
-      return `**Answer:** Here's who completed ${label} tasks in the last ${days} days.
-
-**Evidence:**
-${top5.map((r, i) => `${i + 1}. **${r.name}** — ${r.completed_tasks} tasks completed`).join("\n")}
-
-**Recommendation:** ${wantsLeast ? "Check whether the lowest completers are blocked, under-resourced, or overloaded elsewhere before assuming low output." : `Consider recognizing ${top5[0]?.name}'s output this cycle.`}
-
-_*Note: based on task due-dates, not exact completion timestamps — the DB doesn't currently track when a task was marked Done.*_`;
+      return `Here's who completed ${label} tasks in the last ${days} days:\n\n${top5.map((r, i) => `${i + 1}. ${r.name} — ${r.completed_tasks} tasks`).join("\n")}\n\n${wantsLeast ? "Might be worth checking if they're blocked or overloaded." : `Nice work from ${top5[0]?.name} this cycle.`}\n\n_(Based on task due dates — the DB doesn't track exact completion timestamps yet.)_`;
     } catch (err) {
       console.error("Fallback DB query failed:", err.message);
     }
@@ -382,12 +372,7 @@ _*Note: based on task due-dates, not exact completion timestamps — the DB does
     try {
       const rows = await getUserWorkload();
       const overloaded = rows.filter((r) => Number(r.allocated_pct) >= 0.9);
-      return `**Answer:** ${overloaded.length} team member(s) are at or above 90% allocation.
-
-**Evidence:**
-${overloaded.map((r) => `- **${r.name}:** ${Math.round(r.allocated_pct * 100)}% allocated, ${r.open_tasks} open tasks`).join("\n") || "No one is currently overloaded."}
-
-**Recommendation:** Redistribute tasks from overloaded members to those with spare capacity.`;
+      return `${overloaded.length} people are at or above 90% allocation right now:\n\n${overloaded.map((r) => `- ${r.name}: ${Math.round(r.allocated_pct * 100)}% allocated, ${r.open_tasks} open tasks`).join("\n") || "Actually, no one is overloaded at the moment."}\n\nIf anyone's swamped, consider shifting tasks to teammates with spare capacity.`;
     } catch (err) {
       console.error("Fallback DB query failed:", err.message);
     }
@@ -398,37 +383,25 @@ ${overloaded.map((r) => `- **${r.name}:** ${Math.round(r.allocated_pct * 100)}% 
       (t) => t.owner === currentUser && new Date(t.finish) < new Date() && t.status !== "Done"
     );
     const delayed = projects.filter((p) => p.delayDays > 0).slice(0, 3);
-    return `**Answer:** Good morning ${currentUser}! Here are your priorities today:
-
-**Evidence:**
-${myOverdue.length > 0 ? `- **Your overdue tasks:** ${myOverdue.map((t) => t.task).join(", ")}` : "- No overdue tasks assigned to you"}
-${delayed.length > 0 ? `- **Top delayed projects:** ${delayed.map((p) => `${p.name} (${p.delayDays}d late)`).join(", ")}` : ""}
-- **Open high-severity risks:** ${risks.filter((r) => r.score >= 9).length}
-
-**Recommendation:** Clear any overdue tasks first, then review blocked dependencies.`;
+    return `Good morning ${currentUser}! Here's what's on your plate:\n\n${myOverdue.length > 0 ? `You've got ${myOverdue.length} overdue task(s): ${myOverdue.map((t) => t.task).join(", ")}. Knock those out first.` : "No overdue tasks — you're clear on that front."}\n\n${delayed.length > 0 ? `Top delayed projects to watch: ${delayed.map((p) => `${p.name} (${p.delayDays}d late)`).join(", ")}.` : "No major delays right now."}\n\n${risks.filter((r) => r.score >= 9).length} high-severity risk(s) are still open. Might want to scan those after you clear your tasks.`;
   }
 
   if (q.includes("delay") || q.includes("late") || q.includes("blocking") || q.includes("blocked") || q.includes("behind")) {
     try {
       const { projects: analyzed } = await getDelayAnalysis({});
-      if (analyzed.length === 0) return `**Answer:** No projects are currently delayed. Portfolio is on track!`;
+      if (analyzed.length === 0) return `No projects are delayed right now. Portfolio looks clean.`;
 
       const lines = analyzed.slice(0, 3).map((p) => {
         const reasons = [];
         if (p.blocker) reasons.push(`blocker: "${p.blocker}"`);
-        if (p.open_risks.length) reasons.push(`${p.open_risks.length} open risk(s), top: "${p.open_risks[0].description}" (score ${p.open_risks[0].score ?? "—"})`);
-        if (p.overdue_tasks.length) reasons.push(`${p.overdue_tasks.length} overdue task(s), e.g. "${p.overdue_tasks[0].title}"`);
+        if (p.open_risks.length) reasons.push(`${p.open_risks.length} open risk(s)`);
+        if (p.overdue_tasks.length) reasons.push(`${p.overdue_tasks.length} overdue task(s)`);
         if (p.unresolved_dependencies.length) reasons.push(`${p.unresolved_dependencies.length} unresolved dependency(ies)`);
-        const causeText = reasons.length ? reasons.join("; ") : "no specific cause logged yet";
-        return `- **${p.name}** (${p.delay_days ?? 0}d late): ${causeText}`;
+        const causeText = reasons.length ? reasons.join("; ") : "no specific cause logged";
+        return `${p.name} is ${p.delay_days ?? 0} days late — ${causeText}`;
       });
 
-      return `**Answer:** ${analyzed.length} project(s) are currently delayed.
-
-**Evidence:**
-${lines.join("\n")}
-
-**Recommendation:** Resolve the highest-scoring risk and clear overdue tasks on ${analyzed[0].name} first — it has the longest delay.`;
+      return `${analyzed.length} project(s) are currently delayed:\n\n${lines.join("\n")}\n\nI'd start with ${analyzed[0].name} since it has the longest delay.`;
     } catch (err) {
       console.error("Fallback DB query failed:", err.message);
     }
@@ -436,45 +409,21 @@ ${lines.join("\n")}
 
   if (q.includes("risk")) {
     const topRisks = risks.filter((r) => r.status === "Open").sort((a, b) => b.score - a.score).slice(0, 5);
-    return `**Answer:** ${risks.filter((r) => r.status === "Open").length} risks are currently open.
-
-**Evidence:**
-${topRisks.map((r) => `- **${r.project}:** ${r.risk} (Score ${r.score}, ${r.probability}×${r.impact})`).join("\n")}
-
-**Recommendation:** Address score-9 risks first: ${topRisks.filter((r) => r.score >= 9).map((r) => r.project).join(", ") || "N/A"}.`;
+    return `${risks.filter((r) => r.status === "Open").length} risks are open right now. The top ones:\n\n${topRisks.map((r) => `- ${r.project}: ${r.risk} (score ${r.score})`).join("\n")}\n\nAnything scoring 9+ needs attention ASAP: ${topRisks.filter((r) => r.score >= 9).map((r) => r.project).join(", ") || "nothing critical at the moment"}.`;
   }
 
   if (q.includes("vendor") || q.includes("overdue") || q.includes("supplier")) {
     const overdue = vendors.filter((v) => v.status === "Overdue");
-    return `**Answer:** ${overdue.length} vendor actions are overdue.
-
-**Evidence:**
-${overdue.map((v) => `- **${v.vendor}** (${v.project}): ${v.action} — ${v.daysOpen} days open, owner: ${v.owner}`).join("\n") || "None overdue"}
-
-**Recommendation:** ${overdue.length > 0 ? "Follow up immediately." : "All vendor actions are on track."}`;
+    return `${overdue.length} vendor action(s) are overdue:\n\n${overdue.map((v) => `- ${v.vendor} (${v.project}): ${v.action} — ${v.daysOpen} days open, owner: ${v.owner}`).join("\n") || "Actually, everything looks clean on the vendor side."}\n\n${overdue.length > 0 ? "I'd follow up on these today if I were you." : ""}`;
   }
 
   if (q.includes("go-live") || q.includes("golive") || q.includes("ready") || q.includes("deploy")) {
     const ready = projects.filter((p) => p.health === "Green" && p.delayDays === 0);
     const blocked = projects.filter((p) => p.status === "Blocked" || p.status === "Delayed");
-    return `**Answer:** ${ready.length} projects are healthy and on track.
-
-**Evidence:**
-- Ready: ${ready.map((p) => p.name).join(", ") || "None currently"}
-- Blocked/Delayed: ${blocked.map((p) => p.name).join(", ") || "None"}
-
-**Recommendation:** Resolve blockers on ${blocked.slice(0, 2).map((p) => p.name).join(" and ") || "N/A"} before any Go-Live.`;
+    return `${ready.length} project(s) are healthy and on track for Go-Live.\n\n${blocked.length > 0 ? `But ${blocked.map((p) => p.name).join(", ")} are blocked/delayed — sort those out first before any deployment.` : "Nothing blocked right now."}`;
   }
 
-  return `**Answer:** I analyzed the portfolio for "${question}".
-
-**Evidence:**
-- ${projects.length} projects in portfolio
-- ${risks.filter((r) => r.status === "Open").length} open risks
-- ${vendors.filter((v) => v.status === "Overdue").length} overdue vendor actions
-- ${tasks.filter((t) => t.owner === currentUser && t.status !== "Done").length} pending tasks for you
-
-**Recommendation:** Ask me specifically about delays, risks, vendors, top performers, workload, or Go-Live readiness for a detailed answer.`;
+  return `I looked into "${question}" but I don't have a specific briefing for that yet. Here's the quick snapshot:\n\n- ${projects.length} projects in the portfolio\n- ${risks.filter((r) => r.status === "Open").length} open risks\n- ${vendors.filter((v) => v.status === "Overdue").length} overdue vendor actions\n- ${tasks.filter((t) => t.owner === currentUser && t.status !== "Done").length} pending tasks for you\n\nTry asking about delays, risks, vendors, workload, or your morning brief.`;
 }
 
 async function callGroqSimple(systemPrompt, userPrompt, maxTokens = 600) {
