@@ -128,12 +128,14 @@ function WeeklyTeamMeeting({
    NEW MEETING FORM
    ========================================================= */
 
-function NewMeetingForm({ onSaved, onCancel }) {
+function NewMeetingForm({ users, currentUserId, onSaved, onCancel }) {
   const [topic, setTopic] = useState("");
   const [decision, setDecision] = useState("");
   const [action, setAction] = useState("");
   const [date, setDate] = useState("");
   const [time, setTime] = useState("");
+  const [dueDate, setDueDate] = useState("");
+  const [ownerId, setOwnerId] = useState(currentUserId ?? "");
   const [saving, setSaving] = useState(false);
 
   async function handleSave() {
@@ -144,10 +146,12 @@ function NewMeetingForm({ onSaved, onCancel }) {
     try {
       const meeting = await createMeeting({
         topic: topic.trim(),
-        decision: decision.trim(),
-        action: action.trim(),
+        decision: decision.trim() || null,
+        action: action.trim() || null,
         meetingDate: date || null,
         meetingTime: time || null,
+        dueDate: dueDate || null,
+        ownerId: ownerId || null,
         status: "Planned",
       });
 
@@ -217,17 +221,51 @@ function NewMeetingForm({ onSaved, onCancel }) {
         />
       </div>
 
+      <div className="flex gap-2">
+        <div className="flex-[2]">
+          <label className="block text-[11px] text-muted mb-1">
+            Action item
+          </label>
+
+          <input
+            value={action}
+            onChange={(e) => setAction(e.target.value)}
+            placeholder="What needs to be done?"
+            className="w-full bg-input border border-default rounded px-3 py-2 text-[12.5px] outline-none focus:border-accent"
+          />
+        </div>
+
+        <div className="flex-1">
+          <label className="block text-[11px] text-muted mb-1">
+            Due date
+          </label>
+
+          <input
+            type="date"
+            value={dueDate}
+            onChange={(e) => setDueDate(e.target.value)}
+            className="w-full bg-input border border-default rounded px-3 py-2 text-[12.5px] outline-none focus:border-accent"
+          />
+        </div>
+      </div>
+
       <div>
         <label className="block text-[11px] text-muted mb-1">
-          Action item
+          Owner
         </label>
 
-        <input
-          value={action}
-          onChange={(e) => setAction(e.target.value)}
-          placeholder="What needs to be done?"
+        <select
+          value={ownerId}
+          onChange={(e) => setOwnerId(e.target.value)}
           className="w-full bg-input border border-default rounded px-3 py-2 text-[12.5px] outline-none focus:border-accent"
-        />
+        >
+          <option value="">— Select owner —</option>
+          {users.map((u) => (
+            <option key={u.id} value={u.id}>
+              {u.name}
+            </option>
+          ))}
+        </select>
       </div>
 
       <div className="flex gap-2 justify-end pt-1">
@@ -425,6 +463,9 @@ export default function Meetings({
      --------------------------------------------------------- */
 
   function handleMeetingSaved(m) {
+    // Resolve owner name from users array
+    const ownerUser = users.find((u) => u.id === (m.owner_id ?? m.ownerId));
+
     setItems((prev) => [
       {
         id: m.id,
@@ -433,7 +474,9 @@ export default function Meetings({
         action: m.action,
         date: m.meeting_date ?? m.meetingDate,
         time: m.meeting_time ?? m.meetingTime,
-        owner: m.owner ?? "—",
+        dueDate: m.due_date ?? m.dueDate,
+        owner: ownerUser?.name ?? m.owner ?? "—",
+        ownerId: m.owner_id ?? m.ownerId,
         project: m.project ?? "Portfolio",
         status: m.status,
       },
@@ -492,6 +535,8 @@ export default function Meetings({
 
       {showForm && (
         <NewMeetingForm
+          users={users}
+          currentUserId={currentUserId}
           onCancel={() => setShowForm(false)}
           onSaved={handleMeetingSaved}
         />
@@ -577,9 +622,7 @@ export default function Meetings({
 
                 <span className="text-[11px] text-muted">
                   {fmtDate(m.date)}
-                  {m.time
-                    ? ` · ${m.time.slice(0, 5)}`
-                    : ""}
+                  {m.time ? ` · ${m.time.slice(0, 5)}` : ""}
                 </span>
 
                 {m.id && (
@@ -599,6 +642,7 @@ export default function Meetings({
 
             <div className="text-[11px] text-muted mt-0.5">
               {m.project}
+              {m.dueDate ? ` · Due ${fmtDate(m.dueDate)}` : ""}
             </div>
 
 
