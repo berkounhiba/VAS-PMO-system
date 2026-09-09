@@ -18,7 +18,9 @@ export default function Vendors({
   currentUser,
   currentUserId,
 }) {
-  const [items, setItems] = useState(vendors);
+  const [items, setItems] = useState(() =>
+    (vendors || []).map((v, i) => ({ ...v, _uiId: v.id || `vendor-${i}` }))
+  );
   const [users, setUsers] = useState([]);
   const [projects, setProjects] = useState([]);
   const [mineOnly, setMineOnly] = useState(false);
@@ -26,7 +28,17 @@ export default function Vendors({
   const [editingId, setEditingId] = useState(null);
   const [draftFor, setDraftFor] = useState(null);
 
-  // Fetch users & projects on mount
+  useEffect(() => {
+    setItems((prev) =>
+      (vendors || []).map((v, i) => {
+        const existing = prev.find((p) => p.id && p.id === v.id);
+        return existing
+          ? { ...v, _uiId: existing._uiId }
+          : { ...v, _uiId: v.id || `vendor-${i}-${Date.now()}` };
+      })
+    );
+  }, [vendors]);
+
   useEffect(() => {
     fetchUsers().then(setUsers).catch(console.error);
     fetchProjects().then(setProjects).catch(console.error);
@@ -46,20 +58,29 @@ export default function Vendors({
   }
 
   function handleCreated(v) {
-    setItems((prev) => [normalizeVendor(v, users, projects), ...prev]);
+    const normalized = normalizeVendor(v, users, projects);
+    setItems((prev) => [
+      { ...normalized, _uiId: v.id || `vendor-new-${Date.now()}` },
+      ...prev,
+    ]);
     setShowForm(false);
   }
 
-  function handleUpdated(v) {
+  function handleUpdated(v, oldUiId) {
+    const normalized = normalizeVendor(v, users, projects);
     setItems((prev) =>
       prev.map((x) =>
-        x.id === v.id ? normalizeVendor(v, users, projects) : x
+        x._uiId === oldUiId ? { ...normalized, _uiId: oldUiId } : x
       )
     );
     setEditingId(null);
   }
 
   async function handleDelete(id) {
+    if (!id) {
+      alert("This item has no ID — cannot delete.");
+      return;
+    }
     if (!confirm("Delete this vendor action?")) return;
     try {
       await deleteVendor(id);
@@ -72,121 +93,58 @@ export default function Vendors({
 
   return (
     <div className="space-y-5 max-w-[1200px]">
-      {/* HEADER */}
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold">Vendor Management</h1>
+        <h1 className="text-xl font-bold">Vendor Actions</h1>
         <div className="flex items-center gap-3">
-          <MineToggle
-            active={mineOnly}
-            onToggle={() => setMineOnly((v) => !v)}
-            label="My Actions"
-          />
-          <Pill color={overdue.length > 0 ? RAG_COLOR.Red : RAG_COLOR.Green}>
-            {overdue.length} overdue
-          </Pill>
+          <MineToggle active={mineOnly} onToggle={() => setMineOnly((v) => !v)} label="My Actions" />
+          <Pill color={overdue.length > 0 ? RAG_COLOR.Red : RAG_COLOR.Green}>{overdue.length} overdue</Pill>
           {canManage && (
-            <button
-              onClick={() => {
-                setShowForm((s) => !s);
-                setEditingId(null);
-              }}
-              className="flex items-center gap-1.5 text-[12px] px-3 py-1.5 rounded bg-accent text-white font-medium"
-            >
-              <Plus size={13} />
-              {showForm ? "Close" : "New Vendor"}
+            <button onClick={() => { setShowForm((s) => !s); setEditingId(null); }} className="flex items-center gap-1.5 text-[12px] px-3 py-1.5 rounded bg-accent text-white font-medium">
+              <Plus size={13} />{showForm ? "Close" : "New Action"}
             </button>
           )}
         </div>
       </div>
 
-      {/* ADD FORM */}
       {showForm && (
-        <VendorForm
-          users={users}
-          projects={projects}
-          currentUserId={currentUserId}
-          onSave={handleCreated}
-          onCancel={() => setShowForm(false)}
-        />
+        <VendorForm users={users} projects={projects} currentUserId={currentUserId} onSave={handleCreated} onCancel={() => setShowForm(false)} />
       )}
 
-      {/* MAIN LIST */}
-      <Card
-        title="Vendor Action Tracker"
-        subtitle="Pending actions and SLA status"
-      >
-        {shown.length === 0 && (
-          <div className="text-[12px] text-muted">No vendor actions to show.</div>
-        )}
-
+      <Card title="Vendor Action Tracker" subtitle="Pending actions and SLA status">
+        {shown.length === 0 && <div className="text-[12px] text-muted">No vendor actions to show.</div>}
         <div className="space-y-2">
           {shown.map((v) =>
-            editingId === v.id ? (
-              <VendorForm
-                key={v.id}
-                initial={v}
-                users={users}
-                projects={projects}
-                currentUserId={currentUserId}
-                onSave={handleUpdated}
-                onCancel={() => setEditingId(null)}
-              />
+            editingId === v._uiId ? (
+              <VendorForm key={v._uiId} initial={v} users={users} projects={projects} currentUserId={currentUserId} onSave={(result) => handleUpdated(result, v._uiId)} onCancel={() => setEditingId(null)} />
             ) : (
-              <VendorRow
-                key={v.id}
-                v={v}
-                canEdit={canEdit(v)}
-                canDraft={canManage}
-                onEdit={() => setEditingId(v.id)}
-                onDelete={() => handleDelete(v.id)}
-                onDraft={() => setDraftFor(v)}
-              />
+              <VendorRow key={v._uiId} v={v} canEdit={canEdit(v)} canDraft={canManage} onEdit={() => setEditingId(v._uiId)} onDelete={() => handleDelete(v.id)} onDraft={() => setDraftFor(v)} />
             )
           )}
         </div>
       </Card>
 
-      {/* SUMMARY CARDS */}
       {role !== "engineer" && (
         <div className="grid grid-cols-2 gap-4">
           <Card title="Overdue Actions">
             <div className="text-[12px] space-y-2">
-              {overdue.length === 0 && (
-                <div className="text-muted">No overdue actions. Great!</div>
-              )}
+              {overdue.length === 0 && <div className="text-muted">No overdue actions. Great!</div>}
               {overdue.map((v) => (
-                <div
-                  key={v.id}
-                  className="p-2 rounded bg-input border border-default"
-                >
-                  <div className="font-medium">
-                    {v.vendor} — {v.project}
-                  </div>
+                <div key={v._uiId} className="p-2 rounded bg-input border border-default">
+                  <div className="font-medium">{v.vendor} — {v.project}</div>
                   <div className="text-muted">{v.action}</div>
-                  <div className="text-red text-[11px] mt-1">
-                    {v.daysOpen} days overdue
-                  </div>
+                  <div className="text-red text-[11px] mt-1">{v.daysOpen} days overdue</div>
                 </div>
               ))}
             </div>
           </Card>
           <Card title="Open Actions">
             <div className="text-[12px] space-y-2">
-              {open.length === 0 && (
-                <div className="text-muted">No open actions.</div>
-              )}
+              {open.length === 0 && <div className="text-muted">No open actions.</div>}
               {open.map((v) => (
-                <div
-                  key={v.id}
-                  className="p-2 rounded bg-input border border-default"
-                >
-                  <div className="font-medium">
-                    {v.vendor} — {v.project}
-                  </div>
+                <div key={v._uiId} className="p-2 rounded bg-input border border-default">
+                  <div className="font-medium">{v.vendor} — {v.project}</div>
                   <div className="text-muted">{v.action}</div>
-                  <div className="text-amber text-[11px] mt-1">
-                    Due {fmtDate(v.due)}
-                  </div>
+                  <div className="text-amber text-[11px] mt-1">Due {fmtDate(v.due)}</div>
                 </div>
               ))}
             </div>
@@ -194,33 +152,18 @@ export default function Vendors({
         </div>
       )}
 
-      {draftFor && (
-        <VendorDraftModal v={draftFor} onClose={() => setDraftFor(null)} />
-      )}
+      {draftFor && <VendorDraftModal v={draftFor} onClose={() => setDraftFor(null)} />}
     </div>
   );
 }
 
-/* =========================================================
-   VENDOR ROW
-   ========================================================= */
 function VendorRow({ v, canEdit, canDraft, onEdit, onDelete, onDraft }) {
   return (
     <div className="flex items-start justify-between gap-3 p-3 rounded bg-sidebar border border-default">
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           <span className="text-[12.5px] font-medium">{v.vendor}</span>
-          <Pill
-            color={
-              v.status === "Overdue"
-                ? RAG_COLOR.Red
-                : v.status === "Open"
-                ? RAG_COLOR.Amber
-                : RAG_COLOR.Green
-            }
-          >
-            {v.status}
-          </Pill>
+          <Pill color={v.status === "Overdue" ? RAG_COLOR.Red : v.status === "Open" ? RAG_COLOR.Amber : RAG_COLOR.Green}>{v.status}</Pill>
         </div>
         <div className="text-[11px] text-muted mt-1">{v.project}</div>
         <div className="text-[12px] text-secondary mt-1">{v.action}</div>
@@ -229,39 +172,18 @@ function VendorRow({ v, canEdit, canDraft, onEdit, onDelete, onDraft }) {
         <div>
           <div className="text-[11px] text-muted">Owner</div>
           <div className="text-[12px] font-medium">{v.owner}</div>
-          <div className="text-[11px] text-muted mt-1">
-            Due {fmtDate(v.due)}
-          </div>
-          {v.daysOpen > 0 && (
-            <div className="text-[11px] text-red font-medium">
-              {v.daysOpen} days open
-            </div>
-          )}
+          <div className="text-[11px] text-muted mt-1">Due {fmtDate(v.due)}</div>
+          {v.daysOpen > 0 && <div className="text-[11px] text-red font-medium">{v.daysOpen} days open</div>}
         </div>
         <div className="flex items-center gap-2">
           {canEdit && (
             <>
-              <button
-                onClick={onEdit}
-                className="text-[11px] text-accent hover:underline flex items-center gap-1"
-              >
-                <Pencil size={11} /> Edit
-              </button>
-              <button
-                onClick={onDelete}
-                className="text-[11px] text-red hover:underline flex items-center gap-1"
-              >
-                <Trash2 size={11} /> Delete
-              </button>
+              <button onClick={onEdit} className="text-[11px] text-accent hover:underline flex items-center gap-1"><Pencil size={11} /> Edit</button>
+              <button onClick={onDelete} className="text-[11px] text-red hover:underline flex items-center gap-1"><Trash2 size={11} /> Delete</button>
             </>
           )}
           {canDraft && (
-            <button
-              onClick={onDraft}
-              className="text-[11px] font-medium bg-input border border-default px-2.5 py-1.5 rounded flex items-center gap-1"
-            >
-              <Send size={11} /> Draft
-            </button>
+            <button onClick={onDraft} className="text-[11px] font-medium bg-input border border-default px-2.5 py-1.5 rounded flex items-center gap-1"><Send size={11} /> Draft</button>
           )}
         </div>
       </div>
@@ -269,28 +191,15 @@ function VendorRow({ v, canEdit, canDraft, onEdit, onDelete, onDraft }) {
   );
 }
 
-/* =========================================================
-   VENDOR FORM
-   ========================================================= */
 function VendorForm({ initial, users, projects, currentUserId, onSave, onCancel }) {
-  const isEdit = !!initial;
+  const isEdit = !!initial?.id;
 
   const [vendorName, setVendorName] = useState(initial?.vendor ?? "");
-  const [projectId, setProjectId] = useState(
-    String(initial?.projectId ?? initial?.project_id ?? "")
-  );
-  const [pendingAction, setPendingAction] = useState(
-    initial?.action ?? initial?.pending_action ?? ""
-  );
-  const [ownerId, setOwnerId] = useState(
-    String(initial?.ownerId ?? initial?.owner_id ?? currentUserId ?? "")
-  );
-  const [dueDate, setDueDate] = useState(
-    initial?.due ?? initial?.due_date ?? initial?.dueDate ?? ""
-  );
-  const [daysOpen, setDaysOpen] = useState(
-    initial?.daysOpen ?? initial?.days_open ?? 0
-  );
+  const [projectId, setProjectId] = useState(initial?.projectId ?? initial?.project_id ?? "");
+  const [pendingAction, setPendingAction] = useState(initial?.action ?? initial?.pending_action ?? "");
+  const [ownerId, setOwnerId] = useState(initial?.ownerId ?? initial?.owner_id ?? currentUserId ?? "");
+  const [dueDate, setDueDate] = useState(initial?.due ?? initial?.due_date ?? initial?.dueDate ?? "");
+  const [daysOpen, setDaysOpen] = useState(initial?.daysOpen ?? initial?.days_open ?? 0);
   const [status, setStatus] = useState(initial?.status ?? "Open");
   const [saving, setSaving] = useState(false);
 
@@ -298,13 +207,14 @@ function VendorForm({ initial, users, projects, currentUserId, onSave, onCancel 
     e.preventDefault();
     if (!vendorName.trim()) return;
 
+    // project_id and owner_id are UUID strings — DON'T Number() them!
     const payload = {
-      vendorName: vendorName.trim(),
-      projectId: projectId ? Number(projectId) : null,
-      pendingAction: pendingAction.trim() || null,
-      ownerId: ownerId ? Number(ownerId) : null,
-      dueDate: dueDate || null,
-      daysOpen: Number(daysOpen) || 0,
+      vendor_name: vendorName.trim(),
+      project_id: projectId || null,
+      pending_action: pendingAction.trim() || null,
+      owner_id: ownerId || null,
+      due_date: dueDate || null,
+      days_open: Number(daysOpen) || 0,
       status,
     };
 
@@ -316,105 +226,58 @@ function VendorForm({ initial, users, projects, currentUserId, onSave, onCancel 
       onSave(result);
     } catch (err) {
       console.error(err);
-      alert(isEdit ? "Couldn't update vendor." : "Couldn't create vendor.");
+      alert(isEdit ? "Couldn't update vendor action." : "Couldn't create vendor action.");
     } finally {
       setSaving(false);
     }
   }
 
   return (
-    <form
-      onSubmit={handleSubmit}
-      className="p-4 rounded bg-sidebar border border-default space-y-3 mb-2"
-    >
+    <form onSubmit={handleSubmit} className="p-4 rounded bg-sidebar border border-default space-y-3 mb-2">
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <label className="block text-[11px] text-muted mb-1">
-            Vendor name *
-          </label>
-          <input
-            value={vendorName}
-            onChange={(e) => setVendorName(e.target.value)}
-            className="w-full bg-input border border-default rounded px-3 py-2 text-[12.5px] outline-none focus:border-accent"
-            required
-          />
+          <label className="block text-[11px] text-muted mb-1">Vendor name *</label>
+          <input value={vendorName} onChange={(e) => setVendorName(e.target.value)} className="w-full bg-input border border-default rounded px-3 py-2 text-[12.5px] outline-none focus:border-accent" required />
         </div>
         <div>
           <label className="block text-[11px] text-muted mb-1">Project</label>
-          <select
-            value={projectId}
-            onChange={(e) => setProjectId(e.target.value)}
-            className="w-full bg-input border border-default rounded px-3 py-2 text-[12.5px] outline-none focus:border-accent"
-          >
+          <select value={projectId} onChange={(e) => setProjectId(e.target.value)} className="w-full bg-input border border-default rounded px-3 py-2 text-[12.5px] outline-none focus:border-accent">
             <option value="">— Select project —</option>
             {projects.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
+              <option key={p.id} value={p.id}>{p.name}</option>
             ))}
           </select>
         </div>
       </div>
 
       <div>
-        <label className="block text-[11px] text-muted mb-1">
-          Pending action
-        </label>
-        <input
-          value={pendingAction}
-          onChange={(e) => setPendingAction(e.target.value)}
-          className="w-full bg-input border border-default rounded px-3 py-2 text-[12.5px] outline-none focus:border-accent"
-        />
+        <label className="block text-[11px] text-muted mb-1">Pending action</label>
+        <input value={pendingAction} onChange={(e) => setPendingAction(e.target.value)} className="w-full bg-input border border-default rounded px-3 py-2 text-[12.5px] outline-none focus:border-accent" />
       </div>
 
       <div className="grid grid-cols-3 gap-3">
         <div>
           <label className="block text-[11px] text-muted mb-1">Owner</label>
-          <select
-            value={ownerId}
-            onChange={(e) => setOwnerId(e.target.value)}
-            className="w-full bg-input border border-default rounded px-3 py-2 text-[12.5px] outline-none focus:border-accent"
-          >
+          <select value={ownerId} onChange={(e) => setOwnerId(e.target.value)} className="w-full bg-input border border-default rounded px-3 py-2 text-[12.5px] outline-none focus:border-accent">
             <option value="">— Select owner —</option>
             {users.map((u) => (
-              <option key={u.id} value={u.id}>
-                {u.name}
-              </option>
+              <option key={u.id} value={u.id}>{u.name}</option>
             ))}
           </select>
         </div>
         <div>
-          <label className="block text-[11px] text-muted mb-1">
-            Due date
-          </label>
-          <input
-            type="date"
-            value={dueDate}
-            onChange={(e) => setDueDate(e.target.value)}
-            className="w-full bg-input border border-default rounded px-3 py-2 text-[12.5px] outline-none focus:border-accent"
-          />
+          <label className="block text-[11px] text-muted mb-1">Due date</label>
+          <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} className="w-full bg-input border border-default rounded px-3 py-2 text-[12.5px] outline-none focus:border-accent" />
         </div>
         <div>
-          <label className="block text-[11px] text-muted mb-1">
-            Days open
-          </label>
-          <input
-            type="number"
-            min={0}
-            value={daysOpen}
-            onChange={(e) => setDaysOpen(e.target.value)}
-            className="w-full bg-input border border-default rounded px-3 py-2 text-[12.5px] outline-none focus:border-accent"
-          />
+          <label className="block text-[11px] text-muted mb-1">Days open</label>
+          <input type="number" min={0} value={daysOpen} onChange={(e) => setDaysOpen(e.target.value)} className="w-full bg-input border border-default rounded px-3 py-2 text-[12.5px] outline-none focus:border-accent" />
         </div>
       </div>
 
       <div>
         <label className="block text-[11px] text-muted mb-1">Status</label>
-        <select
-          value={status}
-          onChange={(e) => setStatus(e.target.value)}
-          className="w-full bg-input border border-default rounded px-3 py-2 text-[12.5px] outline-none focus:border-accent"
-        >
+        <select value={status} onChange={(e) => setStatus(e.target.value)} className="w-full bg-input border border-default rounded px-3 py-2 text-[12.5px] outline-none focus:border-accent">
           <option>Open</option>
           <option>Overdue</option>
           <option>Closed</option>
@@ -423,28 +286,15 @@ function VendorForm({ initial, users, projects, currentUserId, onSave, onCancel 
       </div>
 
       <div className="flex gap-2 justify-end pt-1">
-        <button
-          type="button"
-          onClick={onCancel}
-          className="text-[12px] px-3 py-1.5 rounded border border-default text-tertiary"
-        >
-          Cancel
-        </button>
-        <button
-          type="submit"
-          disabled={saving || !vendorName.trim()}
-          className="text-[12px] px-3 py-1.5 rounded bg-accent text-white font-medium disabled:opacity-50"
-        >
-          {saving ? "Saving…" : isEdit ? "Save Changes" : "Create Vendor"}
+        <button type="button" onClick={onCancel} className="text-[12px] px-3 py-1.5 rounded border border-default text-tertiary">Cancel</button>
+        <button type="submit" disabled={saving || !vendorName.trim()} className="text-[12px] px-3 py-1.5 rounded bg-accent text-white font-medium disabled:opacity-50">
+          {saving ? "Saving…" : isEdit ? "Save Changes" : "Create Action"}
         </button>
       </div>
     </form>
   );
 }
 
-/* =========================================================
-   NORMALIZE
-   ========================================================= */
 function normalizeVendor(v, users, projects) {
   const ownerUser = users.find((u) => u.id === (v.owner_id ?? v.ownerId));
   const proj = projects.find((p) => p.id === (v.project_id ?? v.projectId));
@@ -463,9 +313,6 @@ function normalizeVendor(v, users, projects) {
   };
 }
 
-/* =========================================================
-   DRAFT MODAL
-   ========================================================= */
 function VendorDraftModal({ v, onClose }) {
   const draft = `Subject: Follow-up — ${v.action} (${v.project})
 
@@ -479,45 +326,19 @@ Thanks,
 ${v.owner}
 Ooredoo VAS Team`;
   return (
-    <div
-      className="fixed inset-0 overlay-dim flex items-center justify-center z-50"
-      onClick={onClose}
-    >
-      <div
-        className="w-[520px] bg-panel border border-default rounded-md p-5"
-        onClick={(e) => e.stopPropagation()}
-      >
+    <div className="fixed inset-0 overlay-dim flex items-center justify-center z-50" onClick={onClose}>
+      <div className="w-[520px] bg-panel border border-default rounded-md p-5" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-3">
-          <h3 className="font-semibold text-[14px]">
-            Vendor Follow-up — Draft
-          </h3>
-          <button onClick={onClose}>
-            <X size={16} className="text-muted" />
-          </button>
+          <h3 className="font-semibold text-[14px]">Vendor Follow-up — Draft</h3>
+          <button onClick={onClose}><X size={16} className="text-muted" /></button>
         </div>
-        <div className="bg-input border border-default rounded p-3 text-[12px] text-secondary whitespace-pre-wrap font-mono">
-          {draft}
-        </div>
+        <div className="bg-input border border-default rounded p-3 text-[12px] text-secondary whitespace-pre-wrap font-mono">{draft}</div>
         <div className="flex items-center gap-2 mt-3 text-[11px] text-muted">
-          <Lock size={12} /> Requires human review, edit and explicit approval
-          before sending. No message is sent automatically.
+          <Lock size={12} /> Requires human review, edit and explicit approval before sending. No message is sent automatically.
         </div>
         <div className="flex justify-end gap-2 mt-4">
-          <button
-            onClick={onClose}
-            className="text-[12px] px-3 py-1.5 rounded border border-default text-muted"
-          >
-            Discard
-          </button>
-          <button
-            className="text-[12px] px-3 py-1.5 rounded"
-            style={{
-              background: "var(--bg-accent)",
-              color: "var(--text-onaccent)",
-            }}
-          >
-            Edit & Approve (not wired)
-          </button>
+          <button onClick={onClose} className="text-[12px] px-3 py-1.5 rounded border border-default text-muted">Discard</button>
+          <button className="text-[12px] px-3 py-1.5 rounded" style={{ background: "var(--bg-accent)", color: "var(--text-onaccent)" }}>Edit & Approve (not wired)</button>
         </div>
       </div>
     </div>

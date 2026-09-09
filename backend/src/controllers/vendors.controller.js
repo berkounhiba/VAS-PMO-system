@@ -6,7 +6,15 @@ export async function getVendors(req, res) {
 }
 
 export async function createVendor(req, res) {
-  const { vendorName, projectId, pendingAction, ownerId, sentDate, dueDate, daysOpen, status } = req.body;
+  // Accept BOTH camelCase (from old React) and snake_case (from new React)
+  const vendorName = req.body.vendorName ?? req.body.vendor_name;
+  const projectId  = req.body.projectId  ?? req.body.project_id  ?? null;
+  const pendingAction = req.body.pendingAction ?? req.body.pending_action ?? null;
+  const ownerId    = req.body.ownerId    ?? req.body.owner_id    ?? null;
+  const sentDate   = req.body.sentDate   ?? req.body.sent_date   ?? null;
+  const dueDate    = req.body.dueDate    ?? req.body.due_date    ?? null;
+  const daysOpen   = req.body.daysOpen   ?? req.body.days_open   ?? 0;
+  const status     = req.body.status     ?? "Open";
 
   if (!vendorName) return res.status(400).json({ error: "vendorName is required" });
 
@@ -30,27 +38,33 @@ export async function createVendor(req, res) {
 }
 
 const VENDOR_EDITABLE_FIELDS = [
-  "vendor_name",
-  "project_id",
-  "pending_action",
-  "owner_id",
-  "sent_date",
-  "due_date",
-  "days_open",
-  "status",
+  "vendor_name", "project_id", "pending_action", "owner_id",
+  "sent_date", "due_date", "days_open", "status",
 ];
 
 export async function updateVendor(req, res) {
   const { id } = req.params;
-  const updates = req.body;
-  const fieldsToUpdate = Object.keys(updates).filter((k) => VENDOR_EDITABLE_FIELDS.includes(k));
+
+  // Normalize camelCase → snake_case so either works
+  const raw = req.body;
+  const normalized = {};
+  for (const [key, value] of Object.entries(raw)) {
+    const snake = key.replace(/[A-Z]/g, (l) => "_" + l.toLowerCase());
+    normalized[snake] = value;
+  }
+
+  const fieldsToUpdate = Object.keys(normalized).filter((k) =>
+    VENDOR_EDITABLE_FIELDS.includes(k)
+  );
 
   if (fieldsToUpdate.length === 0) {
     return res.status(400).json({ error: "No valid fields to update" });
   }
 
-  const setClause = fieldsToUpdate.map((field, i) => `${field} = $${i + 1}`).join(", ");
-  const values = fieldsToUpdate.map((field) => updates[field]);
+  const setClause = fieldsToUpdate
+    .map((field, i) => `${field} = $${i + 1}`)
+    .join(", ");
+  const values = fieldsToUpdate.map((field) => normalized[field]);
 
   const result = await pool.query(
     `UPDATE vendors SET ${setClause} WHERE id = $${fieldsToUpdate.length + 1} RETURNING *`,

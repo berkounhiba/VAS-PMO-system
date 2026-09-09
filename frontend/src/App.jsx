@@ -200,6 +200,30 @@ export default function App() {
     setRawTasks((prev) => prev.filter((t) => t.id !== taskId));
   }
 
+  function handleRiskCreated(newRawRisk) {
+    setRawRisks((prev) => [newRawRisk, ...prev]);
+  }
+
+  function handleRiskUpdated(updatedRawRisk) {
+    setRawRisks((prev) => prev.map((r) => (r.id === updatedRawRisk.id ? updatedRawRisk : r)));
+  }
+
+  function handleRiskDeleted(riskId) {
+    setRawRisks((prev) => prev.filter((r) => r.id !== riskId));
+  }
+
+  function handleDependencyCreated(newRawDep) {
+    setRawDependencies((prev) => [newRawDep, ...prev]);
+  }
+
+  function handleDependencyUpdated(updatedRawDep) {
+    setRawDependencies((prev) => prev.map((d) => (d.id === updatedRawDep.id ? updatedRawDep : d)));
+  }
+
+  function handleDependencyDeleted(depId) {
+    setRawDependencies((prev) => prev.filter((d) => d.id !== depId));
+  }
+
   // --- auth gating: check session -> show login -> then load data ---
   if (!authChecked) {
     return (
@@ -348,11 +372,17 @@ export default function App() {
               dependencies={dependencies} uatSit={uatSit} golive={golive} vendors={vendors}
               users={users} role={role}
               currentUser={currentUser}
+              onRiskCreated={handleRiskCreated}
+              onRiskUpdated={handleRiskUpdated}
+              onRiskDeleted={handleRiskDeleted}
+              onDependencyCreated={handleDependencyCreated}
+              onDependencyUpdated={handleDependencyUpdated}
+              onDependencyDeleted={handleDependencyDeleted}
               selected={selectedProject} setSelected={setSelectedProject} />
           )}
           {page === "risks" && <RisksDependencies risks={risks} dependencies={dependencies} currentUser={currentUser} />}
           {page === "delivery" && <DeliveryControl uatSit={uatSit} golive={golive} />}
-          {page === "vendors" && <Vendors role={role} vendors={vendors} currentUser={currentUser} />}
+          {page === "vendors" && <Vendors role={role} vendors={vendors} currentUser={currentUser} currentUserId={authUser.id} />}
           {page === "meetings" && (
             <Meetings
               meetings={meetings}

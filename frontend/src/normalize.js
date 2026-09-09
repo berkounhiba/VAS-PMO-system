@@ -147,9 +147,12 @@ export function normalizeGolive(g, { projectNameById }) {
 
 export function normalizeVendor(v, { projectNameById, userNameById }) {
   return {
+    id: v.id,
     vendor: v.vendor_name ?? "—",
+    projectId: v.project_id ?? null,
     project: projectNameById.get(v.project_id) ?? "Unknown project",
     action: v.pending_action ?? "—",
+    ownerId: v.owner_id ?? null,
     owner: userNameById.get(v.owner_id) ?? "Unassigned",
     sent: v.sent_date ?? null,
     due: v.due_date ?? null,
@@ -160,11 +163,15 @@ export function normalizeVendor(v, { projectNameById, userNameById }) {
 
 export function normalizeMeeting(m, { projectNameById, userNameById }) {
   return {
+    id: m.id,
+    projectId: m.project_id ?? null,
     date: m.meeting_date ?? null,
+    time: m.meeting_time ?? null,
     project: m.project_id ? (projectNameById.get(m.project_id) ?? "Unknown project") : "Portfolio",
     topic: m.topic ?? "—",
     decision: m.decision ?? "—",
     action: m.action ?? "—",
+    ownerId: m.owner_id ?? null,
     owner: userNameById.get(m.owner_id) ?? "Unassigned",
     due: m.due_date ?? null,
     status: m.status ?? "—",

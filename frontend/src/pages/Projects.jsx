@@ -12,11 +12,23 @@ import {
   createGolive, updateGolive, deleteGolive,
 } from "../api";
 
+function Field({ label, children }) {
+  return (
+    <div className="flex-1">
+      <div className="text-[11px] text-muted mb-1">{label}</div>
+      {children}
+    </div>
+  );
+}
+
 function NewProjectForm({ users, onSaved, onCancel }) {
   const [name, setName] = useState("");
   const [projectType, setProjectType] = useState("IT");
   const [domain, setDomain] = useState("");
-  const [priority, setPriority] = useState("");
+  const [business, setBusiness] = useState("");
+  const [priority, setPriority] = useState("Medium");
+  const [status, setStatus] = useState("On Track");
+  const [phase, setPhase] = useState("");
   const [leadId, setLeadId] = useState("");
   const [plannedStart, setPlannedStart] = useState("");
   const [plannedGoLive, setPlannedGoLive] = useState("");
@@ -28,69 +40,86 @@ function NewProjectForm({ users, onSaved, onCancel }) {
     setSaving(true);
     try {
       const project = await createProject({
-        name, projectType, domain, priority: priority || "Medium", leadId: leadId || null,
+        name, projectType, domain, business: business || null, priority, status, phase: phase || null,
+        leadId: leadId || null,
         plannedStart: plannedStart || null, plannedGoLive: plannedGoLive || null, forecastGoLive: forecastGoLive || null,
       });
       const leadName = users.find((u) => u.id === leadId)?.name || "Unassigned";
       onSaved(project, leadName);
     } catch (err) {
-      alert("Couldn't create the project — check the backend is running.");
+      alert(err.message);
     } finally {
       setSaving(false);
     }
   }
 
   return (
-    <div className="p-4 rounded bg-sidebar border border-default space-y-2 mb-3">
-      <input
-        value={name}
-        onChange={(e) => setName(e.target.value)}
-        placeholder="Project name (required)"
-        className="w-full bg-input border border-default rounded px-3 py-2 text-[12.5px] outline-none"
-      />
-      <div className="flex gap-2">
-        <select value={projectType} onChange={(e) => setProjectType(e.target.value)} className="flex-1 bg-input border border-default rounded px-3 py-2 text-[12.5px]">
-          <option value="IT">IT</option>
-          <option value="Business">Business</option>
-        </select>
-        <select value={priority} onChange={(e) => setPriority(e.target.value)} className="flex-1 bg-input border border-default rounded px-3 py-2 text-[12.5px]">
-          <option value="" disabled>Select priority…</option>
-          <option>Low</option><option>Medium</option><option>High</option><option>Critical</option>
-        </select>
-      </div>
-      <select value={leadId} onChange={(e) => setLeadId(e.target.value)} className="w-full bg-input border border-default rounded px-3 py-2 text-[12.5px]">
-        <option value="">Assign to… (optional)</option>
-        {users.map((u) => (
-          <option key={u.id} value={u.id}>{u.name} — {u.role}</option>
-        ))}
-      </select>
-      <input
-        value={domain}
-        onChange={(e) => setDomain(e.target.value)}
-        placeholder="Domain (optional)"
-        className="w-full bg-input border border-default rounded px-3 py-2 text-[12.5px] outline-none"
-      />
-      <div>
-        <div className="text-[11px] text-muted mb-1">Planned start</div>
-        <input type="date" value={plannedStart} onChange={(e) => setPlannedStart(e.target.value)} className="w-full bg-input border border-default rounded px-3 py-2 text-[12.5px]" />
-      </div>
-      <div className="flex gap-2">
-        <div className="flex-1">
-          <div className="text-[11px] text-muted mb-1">Planned Go-Live</div>
-          <input type="date" value={plannedGoLive} onChange={(e) => setPlannedGoLive(e.target.value)} className="w-full bg-input border border-default rounded px-3 py-2 text-[12.5px]" />
+    <Card title="New Project">
+      <div className="space-y-2">
+        <Field label="Project name (required)">
+          <input value={name} onChange={(e) => setName(e.target.value)} className="w-full bg-input border border-default rounded px-3 py-2 text-[12.5px] outline-none" />
+        </Field>
+
+        <div className="flex gap-2">
+          <Field label="Type">
+            <select value={projectType} onChange={(e) => setProjectType(e.target.value)} className="w-full bg-input border border-default rounded px-3 py-2 text-[12.5px]">
+              <option value="IT">IT</option>
+              <option value="Business">Business</option>
+            </select>
+          </Field>
+          <Field label="Priority">
+            <select value={priority} onChange={(e) => setPriority(e.target.value)} className="w-full bg-input border border-default rounded px-3 py-2 text-[12.5px]">
+              <option>Low</option><option>Medium</option><option>High</option><option>Critical</option>
+            </select>
+          </Field>
+          <Field label="Status">
+            <select value={status} onChange={(e) => setStatus(e.target.value)} className="w-full bg-input border border-default rounded px-3 py-2 text-[12.5px]">
+              <option>On Track</option><option>Delayed</option><option>Blocked</option><option>On Hold</option><option>Not Started</option>
+            </select>
+          </Field>
         </div>
-        <div className="flex-1">
-          <div className="text-[11px] text-muted mb-1">Forecast Go-Live</div>
-          <input type="date" value={forecastGoLive} onChange={(e) => setForecastGoLive(e.target.value)} className="w-full bg-input border border-default rounded px-3 py-2 text-[12.5px]" />
+
+        <div className="flex gap-2">
+          <Field label="Domain">
+            <input value={domain} onChange={(e) => setDomain(e.target.value)} placeholder="Optional" className="w-full bg-input border border-default rounded px-3 py-2 text-[12.5px] outline-none" />
+          </Field>
+          <Field label="Business unit">
+            <input value={business} onChange={(e) => setBusiness(e.target.value)} placeholder="Optional" className="w-full bg-input border border-default rounded px-3 py-2 text-[12.5px] outline-none" />
+          </Field>
+          <Field label="Phase">
+            <input value={phase} onChange={(e) => setPhase(e.target.value)} placeholder="Optional" className="w-full bg-input border border-default rounded px-3 py-2 text-[12.5px] outline-none" />
+          </Field>
+        </div>
+
+        <Field label="Lead">
+          <select value={leadId} onChange={(e) => setLeadId(e.target.value)} className="w-full bg-input border border-default rounded px-3 py-2 text-[12.5px]">
+            <option value="">Unassigned (you'll become lead automatically unless you're a manager/admin)</option>
+            {users.map((u) => (
+              <option key={u.id} value={u.id}>{u.name} — {u.role}</option>
+            ))}
+          </select>
+        </Field>
+
+        <div className="flex gap-2">
+          <Field label="Planned start">
+            <input type="date" value={plannedStart} onChange={(e) => setPlannedStart(e.target.value)} className="w-full bg-input border border-default rounded px-3 py-2 text-[12.5px]" />
+          </Field>
+          <Field label="Planned Go-Live">
+            <input type="date" value={plannedGoLive} onChange={(e) => setPlannedGoLive(e.target.value)} className="w-full bg-input border border-default rounded px-3 py-2 text-[12.5px]" />
+          </Field>
+          <Field label="Forecast Go-Live">
+            <input type="date" value={forecastGoLive} onChange={(e) => setForecastGoLive(e.target.value)} className="w-full bg-input border border-default rounded px-3 py-2 text-[12.5px]" />
+          </Field>
+        </div>
+
+        <div className="flex gap-2 justify-end pt-1">
+          <button onClick={onCancel} className="text-[12px] px-3 py-1.5 rounded border border-default text-tertiary">Cancel</button>
+          <button onClick={handleSave} disabled={saving || !name.trim()} className="text-[12px] px-3 py-1.5 rounded bg-accent text-white font-medium disabled:opacity-50">
+            {saving ? "Saving…" : "Create Project"}
+          </button>
         </div>
       </div>
-      <div className="flex gap-2 justify-end">
-        <button onClick={onCancel} className="text-[12px] px-3 py-1.5 rounded border border-default text-tertiary">Cancel</button>
-        <button onClick={handleSave} disabled={saving} className="text-[12px] px-3 py-1.5 rounded bg-accent text-white font-medium">
-          {saving ? "Saving…" : "Create Project"}
-        </button>
-      </div>
-    </div>
+    </Card>
   );
 }
 
@@ -105,13 +134,20 @@ function suggestHealth(delayDays, status) {
 }
 
 function EditProjectForm({ project, users, onSaved, onCancel }) {
+  const [name, setName] = useState(project.name || "");
+  const [projectType, setProjectType] = useState(project.track === "business" ? "Business" : "IT");
+  const [domain, setDomain] = useState(project.domain === "—" ? "" : project.domain || "");
+  const [business, setBusiness] = useState(project.business === "—" ? "" : project.business || "");
   const [status, setStatus] = useState(project.status || "On Track");
   const [health, setHealth] = useState(project.health || "Green");
   const [priority, setPriority] = useState(project.priority || "Medium");
+  const [phase, setPhase] = useState(project.phase === "—" ? "" : project.phase || "");
   const [progress, setProgress] = useState(project.progress ?? 0);
   const [delayDays, setDelayDays] = useState(project.delayDays ?? 0);
   const [blocker, setBlocker] = useState(project.blocker || "");
-  const [nextAction, setNextAction] = useState(project.nextAction || "");
+  const [nextAction, setNextAction] = useState(project.nextAction === "—" ? "" : project.nextAction || "");
+  const [escalation, setEscalation] = useState(project.escalation || "No");
+  const [remarks, setRemarks] = useState(project.remarks || "");
   const [leadId, setLeadId] = useState(project.leadId || "");
   const [plannedStart, setPlannedStart] = useState(project.plannedStart?.slice(0, 10) || "");
   const [plannedGoLive, setPlannedGoLive] = useState(project.plannedFinish?.slice(0, 10) || "");
@@ -121,17 +157,22 @@ function EditProjectForm({ project, users, onSaved, onCancel }) {
   const suggested = suggestHealth(delayDays, status);
 
   async function handleSave() {
+    if (!name.trim()) return;
     setSaving(true);
     try {
       const updated = await updateProject(project.id, {
-        status, health, priority, progress: Number(progress), delay_days: Number(delayDays) || 0,
-        blocker, next_action: nextAction, lead_id: leadId || null,
+        name, domain: domain || null, business: business || null,
+        status, health, priority, phase: phase || null,
+        progress: Number(progress), delay_days: Number(delayDays) || 0,
+        blocker: blocker || null, next_action: nextAction || null,
+        escalation, remarks: remarks || null,
+        lead_id: leadId || null,
         planned_start: plannedStart || null, planned_go_live: plannedGoLive || null, forecast_go_live: forecastGoLive || null,
       });
       const leadName = users.find((u) => u.id === leadId)?.name || "Unassigned";
       onSaved(updated, leadName);
     } catch (err) {
-      alert("Couldn't save changes — check the backend is running.");
+      alert(err.message);
     } finally {
       setSaving(false);
     }
@@ -140,19 +181,57 @@ function EditProjectForm({ project, users, onSaved, onCancel }) {
   return (
     <Card title="Edit Project">
       <div className="space-y-2">
+        <Field label="Project name">
+          <input value={name} onChange={(e) => setName(e.target.value)} className="w-full bg-input border border-default rounded px-3 py-2 text-[12.5px] outline-none" />
+        </Field>
+
         <div className="flex gap-2">
-          <select value={status} onChange={(e) => setStatus(e.target.value)} className="flex-1 bg-input border border-default rounded px-3 py-2 text-[12.5px]">
-            <option>On Track</option><option>Delayed</option><option>Blocked</option><option>On Hold</option><option>Not Started</option>
-          </select>
-          <select value={priority} onChange={(e) => setPriority(e.target.value)} className="flex-1 bg-input border border-default rounded px-3 py-2 text-[12.5px]">
-            <option value="" disabled>Select priority…</option>
-            <option>Low</option><option>Medium</option><option>High</option><option>Critical</option>
-          </select>
-          <input type="number" min="0" max="1" step="0.05" value={progress} onChange={(e) => setProgress(e.target.value)} placeholder="Progress (0-1)" className="w-28 bg-input border border-default rounded px-3 py-2 text-[12.5px]" />
-          <input type="number" min="0" value={delayDays} onChange={(e) => setDelayDays(e.target.value)} placeholder="Delay (days)" className="w-28 bg-input border border-default rounded px-3 py-2 text-[12.5px]" />
+          <Field label="Type">
+            <select value={projectType} onChange={(e) => setProjectType(e.target.value)} className="w-full bg-input border border-default rounded px-3 py-2 text-[12.5px]">
+              <option value="IT">IT</option>
+              <option value="Business">Business</option>
+            </select>
+          </Field>
+          <Field label="Status">
+            <select value={status} onChange={(e) => setStatus(e.target.value)} className="w-full bg-input border border-default rounded px-3 py-2 text-[12.5px]">
+              <option>On Track</option><option>Delayed</option><option>Blocked</option><option>On Hold</option><option>Not Started</option>
+            </select>
+          </Field>
+          <Field label="Priority">
+            <select value={priority} onChange={(e) => setPriority(e.target.value)} className="w-full bg-input border border-default rounded px-3 py-2 text-[12.5px]">
+              <option>Low</option><option>Medium</option><option>High</option><option>Critical</option>
+            </select>
+          </Field>
+        </div>
+
+        <div className="flex gap-2">
+          <Field label="Domain">
+            <input value={domain} onChange={(e) => setDomain(e.target.value)} className="w-full bg-input border border-default rounded px-3 py-2 text-[12.5px] outline-none" />
+          </Field>
+          <Field label="Business unit">
+            <input value={business} onChange={(e) => setBusiness(e.target.value)} className="w-full bg-input border border-default rounded px-3 py-2 text-[12.5px] outline-none" />
+          </Field>
+          <Field label="Phase">
+            <input value={phase} onChange={(e) => setPhase(e.target.value)} className="w-full bg-input border border-default rounded px-3 py-2 text-[12.5px] outline-none" />
+          </Field>
+        </div>
+
+        <div className="flex gap-2">
+          <Field label="Progress (0–1)">
+            <input type="number" min="0" max="1" step="0.05" value={progress} onChange={(e) => setProgress(e.target.value)} className="w-full bg-input border border-default rounded px-3 py-2 text-[12.5px]" />
+          </Field>
+          <Field label="Delay (days)">
+            <input type="number" min="0" value={delayDays} onChange={(e) => setDelayDays(e.target.value)} className="w-full bg-input border border-default rounded px-3 py-2 text-[12.5px]" />
+          </Field>
+          <Field label="Escalation">
+            <select value={escalation} onChange={(e) => setEscalation(e.target.value)} className="w-full bg-input border border-default rounded px-3 py-2 text-[12.5px]">
+              <option>No</option><option>Yes</option>
+            </select>
+          </Field>
         </div>
 
         <div>
+          <div className="text-[11px] text-muted mb-1">Health</div>
           <div className="flex items-center gap-2">
             <select value={health} onChange={(e) => setHealth(e.target.value)} className="flex-1 bg-input border border-default rounded px-3 py-2 text-[12.5px]">
               <option>Green</option><option>Amber</option><option>Red</option>
@@ -169,35 +248,42 @@ function EditProjectForm({ project, users, onSaved, onCancel }) {
             )}
           </div>
           <div className="text-[10.5px] text-muted mt-1">
-            Health is a manual PM judgment call (matches DB behavior) — the suggestion is based on status/delay, but you can override it.
+            Manual judgment call — the suggestion is based on status/delay, but you can override it.
           </div>
         </div>
 
-        <select value={leadId} onChange={(e) => setLeadId(e.target.value)} className="w-full bg-input border border-default rounded px-3 py-2 text-[12.5px]">
-          <option value="">Assign to…</option>
-          {users.map((u) => (<option key={u.id} value={u.id}>{u.name} — {u.role}</option>))}
-        </select>
+        <Field label="Lead">
+          <select value={leadId} onChange={(e) => setLeadId(e.target.value)} className="w-full bg-input border border-default rounded px-3 py-2 text-[12.5px]">
+            <option value="">Unassigned</option>
+            {users.map((u) => (<option key={u.id} value={u.id}>{u.name} — {u.role}</option>))}
+          </select>
+        </Field>
 
         <div className="flex gap-2">
-          <div className="flex-1">
-            <div className="text-[11px] text-muted mb-1">Planned start</div>
+          <Field label="Planned start">
             <input type="date" value={plannedStart} onChange={(e) => setPlannedStart(e.target.value)} className="w-full bg-input border border-default rounded px-3 py-2 text-[12.5px]" />
-          </div>
-          <div className="flex-1">
-            <div className="text-[11px] text-muted mb-1">Planned Go-Live</div>
+          </Field>
+          <Field label="Planned Go-Live">
             <input type="date" value={plannedGoLive} onChange={(e) => setPlannedGoLive(e.target.value)} className="w-full bg-input border border-default rounded px-3 py-2 text-[12.5px]" />
-          </div>
-          <div className="flex-1">
-            <div className="text-[11px] text-muted mb-1">Forecast Go-Live</div>
+          </Field>
+          <Field label="Forecast Go-Live">
             <input type="date" value={forecastGoLive} onChange={(e) => setForecastGoLive(e.target.value)} className="w-full bg-input border border-default rounded px-3 py-2 text-[12.5px]" />
-          </div>
+          </Field>
         </div>
 
-        <input value={blocker} onChange={(e) => setBlocker(e.target.value)} placeholder="Current blocker" className="w-full bg-input border border-default rounded px-3 py-2 text-[12.5px] outline-none" />
-        <input value={nextAction} onChange={(e) => setNextAction(e.target.value)} placeholder="Next action" className="w-full bg-input border border-default rounded px-3 py-2 text-[12.5px] outline-none" />
-        <div className="flex gap-2 justify-end">
+        <Field label="Current blocker">
+          <input value={blocker} onChange={(e) => setBlocker(e.target.value)} className="w-full bg-input border border-default rounded px-3 py-2 text-[12.5px] outline-none" />
+        </Field>
+        <Field label="Next action">
+          <input value={nextAction} onChange={(e) => setNextAction(e.target.value)} className="w-full bg-input border border-default rounded px-3 py-2 text-[12.5px] outline-none" />
+        </Field>
+        <Field label="Remarks">
+          <input value={remarks} onChange={(e) => setRemarks(e.target.value)} className="w-full bg-input border border-default rounded px-3 py-2 text-[12.5px] outline-none" />
+        </Field>
+
+        <div className="flex gap-2 justify-end pt-1">
           <button onClick={onCancel} className="text-[12px] px-3 py-1.5 rounded border border-default text-tertiary">Cancel</button>
-          <button onClick={handleSave} disabled={saving} className="text-[12px] px-3 py-1.5 rounded bg-accent text-white font-medium">{saving ? "Saving…" : "Save Changes"}</button>
+          <button onClick={handleSave} disabled={saving || !name.trim()} className="text-[12px] px-3 py-1.5 rounded bg-accent text-white font-medium disabled:opacity-50">{saving ? "Saving…" : "Save Changes"}</button>
         </div>
       </div>
     </Card>
@@ -228,14 +314,14 @@ function MilestoneForm({ projectId, users, initial, onSaved, onCancel }) {
         });
       } else {
         saved = await createMilestone({
-          title, projectId, ownerId: ownerId || null, dueDate: dueDate || null,
-          forecastDate: forecastDate || null, status,
+          title, project_id: projectId, owner_id: ownerId || null, due_date: dueDate || null,
+          forecast_date: forecastDate || null, status,
         });
       }
       const ownerName = users.find((u) => u.id === ownerId)?.name || "—";
       onSaved(saved, ownerName);
     } catch (err) {
-      alert("Couldn't save the milestone — check the backend is running.");
+      alert(err.message);
     } finally {
       setSaving(false);
     }
@@ -289,6 +375,17 @@ function TaskForm({ projectId, users, initial, onSaved, onCancel }) {
     else if (newStatus === "Not Started") setProgress(0);
   }
 
+  function handleProgressChange(newProgress) {
+    setProgress(newProgress);
+    const p = Number(newProgress);
+    // Mirror of the rule above, but driven from the slider instead
+    // of the dropdown. Blocked is never touched automatically.
+    if (status === "Blocked") return;
+    if (p >= 1) setStatus("Done");
+    else if (p <= 0) setStatus("Not Started");
+    else if (status === "Done" || status === "Not Started") setStatus("In Progress");
+  }
+
   async function handleSave() {
     if (!title.trim()) return;
     setSaving(true);
@@ -307,7 +404,7 @@ function TaskForm({ projectId, users, initial, onSaved, onCancel }) {
       const ownerName = users.find((u) => u.id === assigneeId)?.name || "—";
       onSaved(saved, ownerName);
     } catch (err) {
-      alert("Couldn't save the task — check the backend is running.");
+      alert(err.message);
     } finally {
       setSaving(false);
     }
@@ -341,7 +438,7 @@ function TaskForm({ projectId, users, initial, onSaved, onCancel }) {
             type="range" min="0" max="1" step="0.05"
             value={progress}
             disabled={status === "Done" || status === "Not Started"}
-            onChange={(e) => setProgress(e.target.value)}
+            onChange={(e) => handleProgressChange(e.target.value)}
             className="w-full disabled:opacity-40"
           />
         </div>
@@ -389,7 +486,7 @@ function RiskForm({ projectId, users, initial, onSaved, onCancel }) {
       const ownerName = users.find((u) => u.id === ownerId)?.name || "—";
       onSaved(saved, ownerName);
     } catch (err) {
-      alert("Couldn't save the risk — check the backend is running.");
+      alert(err.message);
     } finally {
       setSaving(false);
     }
@@ -455,7 +552,7 @@ function DependencyForm({ projectId, users, initial, onSaved, onCancel }) {
       const ownerName = users.find((u) => u.id === ownerId)?.name || "—";
       onSaved(saved, ownerName);
     } catch (err) {
-      alert("Couldn't save the dependency — check the backend is running.");
+      alert(err.message);
     } finally {
       setSaving(false);
     }
@@ -521,7 +618,7 @@ function UatSitForm({ projectId, initial, onSaved, onCancel }) {
       }
       onSaved(saved);
     } catch (err) {
-      alert("Couldn't save the SIT/UAT record — check the backend is running.");
+      alert(err.message);
     } finally {
       setSaving(false);
     }
@@ -596,7 +693,7 @@ function GoliveForm({ projectId, initial, onSaved, onCancel }) {
       }
       onSaved(saved);
     } catch (err) {
-      alert("Couldn't save Go-Live readiness — check the backend is running.");
+      alert(err.message);
     } finally {
       setSaving(false);
     }
@@ -626,7 +723,7 @@ function GoliveForm({ projectId, initial, onSaved, onCancel }) {
   );
 }
 
-function ProjectDetail({ project: p, tasks, milestones, risks, dependencies, uatSit, golive, vendors, users, canManage, onBack, onUpdated, onDeleted }) {
+function ProjectDetail({ project: p, tasks, milestones, risks, dependencies, uatSit, golive, vendors, users, canManage, onBack, onUpdated, onDeleted, onRiskCreated, onRiskUpdated, onRiskDeleted, onDependencyCreated, onDependencyUpdated, onDependencyDeleted }) {
 
 
   const [editing, setEditing] = useState(false);
@@ -645,15 +742,9 @@ function ProjectDetail({ project: p, tasks, milestones, risks, dependencies, uat
   const [addingTask, setAddingTask] = useState(false);
   const [editingTaskId, setEditingTaskId] = useState(null);
 
-  const [extraRisks, setExtraRisks] = useState([]);
-  const [removedRiskIds, setRemovedRiskIds] = useState([]);
-  const [riskOverrides, setRiskOverrides] = useState({});
   const [addingRisk, setAddingRisk] = useState(false);
   const [editingRiskId, setEditingRiskId] = useState(null);
 
-  const [extraDeps, setExtraDeps] = useState([]);
-  const [removedDepIds, setRemovedDepIds] = useState([]);
-  const [depOverrides, setDepOverrides] = useState({});
   const [addingDep, setAddingDep] = useState(false);
   const [editingDepId, setEditingDepId] = useState(null);
 
@@ -675,21 +766,27 @@ function ProjectDetail({ project: p, tasks, milestones, risks, dependencies, uat
     .filter((t) => !removedTaskIds.includes(t.id))
     .map((t) => (taskOverrides[t.id] ? { ...t, ...taskOverrides[t.id] } : t));
 
-  const pRisks = [...risks.filter((r) => r.project === p.name), ...extraRisks]
-    .filter((r) => !removedRiskIds.includes(r.id))
-    .map((r) => (riskOverrides[r.id] ? { ...r, ...riskOverrides[r.id] } : r));
-
-  const deps = [...dependencies.filter((d) => d.project === p.name), ...extraDeps]
-    .filter((d) => !removedDepIds.includes(d.id))
-    .map((d) => (depOverrides[d.id] ? { ...d, ...depOverrides[d.id] } : d));
+  // Risks and dependencies are derived directly from the parent's
+  // always-fresh props (kept in sync via onRiskCreated/onDependencyCreated
+  // etc.) instead of local-only optimistic state — that local-only
+  // approach was the actual bug: it never reached App.jsx's source of
+  // truth, so the separate Risks & Dependencies page never saw new items.
+  const pRisks = risks.filter((r) => r.project === p.name);
+  const deps = dependencies.filter((d) => d.project === p.name);
 
   const uatsit = [...uatSit.filter((u) => u.project === p.name), ...extraUatSit]
     .filter((u) => !removedUatSitIds.includes(u.id))
     .map((u) => (uatSitOverrides[u.id] ? { ...u, ...uatSitOverrides[u.id] } : u));
 
   const goliveRow = goliveDeleted ? null : (goliveOverride || golive.find((g) => g.project === p.name));
-  const vendorActions = vendors.filter((v) => v.project === p.name);
+  const vendorActions = vendors.filter((v) => {
+    const vendorProjectId = v.project_id ?? v.projectId;
 
+    return (
+      vendorProjectId === p.id ||
+      (!vendorProjectId && v.project === p.name)
+    );
+  });
   async function handleDelete() {
     if (!confirm(`Delete "${p.name}"? This cannot be undone.`)) return;
     try {
@@ -697,10 +794,7 @@ function ProjectDetail({ project: p, tasks, milestones, risks, dependencies, uat
       onDeleted(p.id);
       onBack();
     } catch (err) {
-      const msg = err.message.includes("409")
-        ? "This project still has tasks, milestones, or risks linked to it — remove those first."
-        : "Couldn't delete — check the backend is running.";
-      alert(msg);
+      alert(err.message);
     }
   }
 
@@ -710,7 +804,7 @@ function ProjectDetail({ project: p, tasks, milestones, risks, dependencies, uat
       await deleteMilestone(id);
       setRemovedMilestoneIds((prev) => [...prev, id]);
     } catch (err) {
-      alert("Couldn't delete the milestone — check the backend is running.");
+      alert(err.message);
     }
   }
 
@@ -720,7 +814,7 @@ function ProjectDetail({ project: p, tasks, milestones, risks, dependencies, uat
       await deleteTask(id);
       setRemovedTaskIds((prev) => [...prev, id]);
     } catch (err) {
-      alert("Couldn't delete the task — check the backend is running.");
+      alert(err.message);
     }
   }
 
@@ -728,9 +822,9 @@ function ProjectDetail({ project: p, tasks, milestones, risks, dependencies, uat
     if (!confirm("Delete this risk?")) return;
     try {
       await deleteRisk(id);
-      setRemovedRiskIds((prev) => [...prev, id]);
+      onRiskDeleted(id);
     } catch (err) {
-      alert("Couldn't delete the risk — check the backend is running.");
+      alert(err.message);
     }
   }
 
@@ -738,9 +832,9 @@ function ProjectDetail({ project: p, tasks, milestones, risks, dependencies, uat
     if (!confirm("Delete this dependency?")) return;
     try {
       await deleteDependency(id);
-      setRemovedDepIds((prev) => [...prev, id]);
+      onDependencyDeleted(id);
     } catch (err) {
-      alert("Couldn't delete the dependency — check the backend is running.");
+      alert(err.message);
     }
   }
 
@@ -750,7 +844,7 @@ function ProjectDetail({ project: p, tasks, milestones, risks, dependencies, uat
       await deleteUatSit(id);
       setRemovedUatSitIds((prev) => [...prev, id]);
     } catch (err) {
-      alert("Couldn't delete the record — check the backend is running.");
+      alert(err.message);
     }
   }
 
@@ -762,7 +856,7 @@ function ProjectDetail({ project: p, tasks, milestones, risks, dependencies, uat
       setGoliveDeleted(true);
       setGoliveOverride(null);
     } catch (err) {
-      alert("Couldn't delete Go-Live readiness — check the backend is running.");
+      alert(err.message);
     }
   }
 
@@ -937,11 +1031,8 @@ function ProjectDetail({ project: p, tasks, milestones, risks, dependencies, uat
               projectId={p.id}
               users={users}
               onCancel={() => setAddingRisk(false)}
-              onSaved={(saved, ownerName) => {
-                setExtraRisks((prev) => [
-                  { id: saved.id, project: p.name, risk: saved.description, severity: saved.severity, probability: saved.probability, impact: saved.impact, score: saved.score, mitigation: saved.mitigation, owner: ownerName, ownerId: saved.owner_id, status: saved.status },
-                  ...prev,
-                ]);
+              onSaved={(saved) => {
+                onRiskCreated(saved);
                 setAddingRisk(false);
               }}
             />
@@ -954,11 +1045,8 @@ function ProjectDetail({ project: p, tasks, milestones, risks, dependencies, uat
                 users={users}
                 initial={r}
                 onCancel={() => setEditingRiskId(null)}
-                onSaved={(saved, ownerName) => {
-                  setRiskOverrides((prev) => ({
-                    ...prev,
-                    [r.id]: { risk: saved.description, severity: saved.severity, probability: saved.probability, impact: saved.impact, score: saved.score, mitigation: saved.mitigation, owner: ownerName, ownerId: saved.owner_id, status: saved.status },
-                  }));
+                onSaved={(saved) => {
+                  onRiskUpdated(saved);
                   setEditingRiskId(null);
                 }}
               />
@@ -989,11 +1077,8 @@ function ProjectDetail({ project: p, tasks, milestones, risks, dependencies, uat
               projectId={p.id}
               users={users}
               onCancel={() => setAddingDep(false)}
-              onSaved={(saved, ownerName) => {
-                setExtraDeps((prev) => [
-                  { id: saved.id, project: p.name, dependsOn: saved.depends_on, critical: saved.critical === "Yes", ownerId: saved.owner_id, owner: ownerName, status: saved.status, target: saved.target_date },
-                  ...prev,
-                ]);
+              onSaved={(saved) => {
+                onDependencyCreated(saved);
                 setAddingDep(false);
               }}
             />
@@ -1006,11 +1091,8 @@ function ProjectDetail({ project: p, tasks, milestones, risks, dependencies, uat
                 users={users}
                 initial={d}
                 onCancel={() => setEditingDepId(null)}
-                onSaved={(saved, ownerName) => {
-                  setDepOverrides((prev) => ({
-                    ...prev,
-                    [d.id]: { dependsOn: saved.depends_on, critical: saved.critical === "Yes", ownerId: saved.owner_id, owner: ownerName, status: saved.status, target: saved.target_date },
-                  }));
+                onSaved={(saved) => {
+                  onDependencyUpdated(saved);
                   setEditingDepId(null);
                 }}
               />
@@ -1030,9 +1112,9 @@ function ProjectDetail({ project: p, tasks, milestones, risks, dependencies, uat
 
         <Card
           title="SIT / UAT"
-          right={canManage && (
-            <button onClick={() => { setAddingUatSit((s) => !s); setEditingUatSitId(null); }} className="text-[11px] font-medium text-accent">
-              {addingUatSit ? "Cancel" : "+ Add"}
+          right={canManage && uatsit.length === 0 && !editingUatSitId && (
+            <button onClick={() => { setAddingUatSit(true); setEditingUatSitId(null); }} className="text-[11px] font-medium text-accent">
+              + Add
             </button>
           )}
         >
@@ -1146,7 +1228,13 @@ export default function Projects({
   role,
   currentUser,
   selected,
-  setSelected
+  setSelected,
+  onRiskCreated,
+  onRiskUpdated,
+  onRiskDeleted,
+  onDependencyCreated,
+  onDependencyUpdated,
+  onDependencyDeleted,
 }) {
   const [track, setTrack] = useState("it");
   const [filterHealth, setFilterHealth] = useState("All");
@@ -1191,6 +1279,12 @@ export default function Projects({
         dependencies={dependencies} uatSit={uatSit} golive={golive} vendors={vendors}
         users={users} canManage={canManage}
         onBack={() => setSelected(null)}
+        onRiskCreated={onRiskCreated}
+        onRiskUpdated={onRiskUpdated}
+        onRiskDeleted={onRiskDeleted}
+        onDependencyCreated={onDependencyCreated}
+        onDependencyUpdated={onDependencyUpdated}
+        onDependencyDeleted={onDependencyDeleted}
         onUpdated={(updated, leadName) => {
           setOverrides((prev) => ({
             ...prev,

@@ -15,10 +15,20 @@ async function getJSON(path) {
   });
 
   if (!res.ok) {
-    throw new Error(`${path} returned ${res.status}`);
+    throw new Error(await extractErrorMessage(res, path));
   }
 
   return res.json();
+}
+
+async function extractErrorMessage(res, path) {
+  try {
+    const data = await res.json();
+    if (data?.error) return data.error;
+  } catch {
+    // response wasn't JSON — fall through to the generic message
+  }
+  return `${path} returned ${res.status}`;
 }
 
 async function sendJSON(path, method, body) {
@@ -29,7 +39,7 @@ async function sendJSON(path, method, body) {
   });
 
   if (!res.ok) {
-    throw new Error(`${path} returned ${res.status}`);
+    throw new Error(await extractErrorMessage(res, path));
   }
 
   // DELETE endpoints can return 204 No Content.

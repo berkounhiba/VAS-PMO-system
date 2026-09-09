@@ -43,6 +43,7 @@ export async function getAllProjectsFull(req, res) {
 
   res.json(result.rows);
 }
+
 export async function getITProjects(req, res) {
   const result = await pool.query(`
     SELECT p.id, p.name, p.status, p.health, p.progress,
@@ -65,6 +66,7 @@ export async function createProject(req, res) {
   const {
     name, domain, business, projectType, priority, status, phase, leadId,
     plannedStart, plannedGoLive, forecastGoLive,
+    progress, health, blocker, nextAction, escalation, remarks,
   } = req.body;
 
   if (!name) return res.status(400).json({ error: "Project name is required" });
@@ -72,13 +74,28 @@ export async function createProject(req, res) {
   const result = await pool.query(
     `INSERT INTO projects
        (name, domain, business, project_type, priority, status, phase, lead_id,
-        planned_start, planned_go_live, forecast_go_live)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        planned_start, planned_go_live, forecast_go_live,
+        progress, health, blocker, next_action, escalation, remarks)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
      RETURNING *`,
     [
-      name, domain || null, business || null, projectType || null,
-      priority || "Medium", status || "On Track", phase || null, leadId || null,
-      plannedStart || null, plannedGoLive || null, forecastGoLive || null,
+      name,
+      domain || null,
+      business || null,
+      projectType || null,
+      priority || "Medium",
+      status || "On Track",
+      phase || null,
+      leadId || null,
+      plannedStart || null,
+      plannedGoLive || null,
+      forecastGoLive || null,
+      progress !== undefined ? Number(progress) : 0,
+      health || "Green",
+      blocker || null,
+      nextAction || null,
+      escalation || "No",
+      remarks || null,
     ]
   );
   res.status(201).json(result.rows[0]);
