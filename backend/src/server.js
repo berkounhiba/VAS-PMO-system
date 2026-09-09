@@ -1,6 +1,9 @@
 import express from "express";
 import "dotenv/config";
 import cors from "cors";
+import helmet from "helmet";
+import rateLimit from "express-rate-limit";
+
 import tasksRoutes from "./routes/tasks.routes.js";
 import usersRoutes from "./routes/users.routes.js";
 import projectsRoutes from "./routes/projects.routes.js";
@@ -19,10 +22,42 @@ import settingsRoutes from "./routes/settings.routes.js";
 import { requireAuth } from "./middleware/auth.middleware.js";
 
 const app = express();
-app.use(cors());
+app.set("trust proxy", 1);
+
+const allowedOrigins = [
+  "http://localhost:5173",
+  "http://localhost:4173",
+];
+
+app.use(cors({
+  origin: function (origin, callback) {
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.includes(origin)) return callback(null, true);
+    console.warn(`[CORS BLOCKED] ${origin}`);
+    callback(new Error("Not allowed by CORS"));
+  },
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+}));
+
+app.use(helmet());
+
 app.use(express.json());
-app.use("/api", authRoutes); // /login is public, /me protects itself
-app.use("/api", requireAuth); // everything below this line requires a valid token
+
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  skipSuccessfulRequests: true,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many login attempts. Try again in 15 minutes." },
+});
+app.use("/api/login", loginLimiter);
+
+app.use("/api", authRoutes);
+
+app.use("/api", requireAuth);
+
 app.use("/api", tasksRoutes);
 app.use("/api", usersRoutes);
 app.use("/api", projectsRoutes);
@@ -39,4 +74,10 @@ app.use("/api", aiRoutes);
 app.use("/api", settingsRoutes);
 
 const PORT = process.env.PORT || 4000;
+app.use((err, req, res, next) => {
+  if (err.message === "Not allowed by CORS") {
+    return res.status(403).json({ error: "Origin not allowed" });
+  }
+  next(err);
+});
 app.listen(PORT, () => console.log(`API running on http://localhost:${PORT}`));

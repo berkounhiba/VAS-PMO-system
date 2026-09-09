@@ -1,6 +1,10 @@
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import { pool } from "../config/db.js";
+
+if (!user.is_active) {
+  return res.status(403).json({ error: "This account has been deactivated" });
+}
  
 export async function login(req, res) {
   const { name, password } = req.body;
